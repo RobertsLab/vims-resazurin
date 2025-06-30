@@ -47,6 +47,8 @@ assignment <- assignment[order(assignment$Plate, assignment$Column), ]
 # View the assignment
 print(assignment)
 
+rownames(assignment)<-NULL
+
 #save output file of plate assignments 
 write.csv(assignment, "output/plate-maps/plate-assignments.csv")
 ```
