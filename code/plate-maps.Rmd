@@ -1,0 +1,53 @@
+---
+title: VIMS plate maps  
+author: "AS Huffmyer"
+date: '2025'
+output:
+  github_document: null
+  md_document: default
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_depth: 6
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+set.seed(123)  # For reproducibility
+
+# Updated list of 50 unique family numbers
+families <- c(0, 5, 6, 7, 12, 14, 15, 16, 19, 20, 21, 24, 25, 26, 31, 32, 33, 34, 36,
+              37, 38, 39, 41, 42, 43, 47, 48, 49, 50, 51, 54, 55, 57, 60, 61, 70, 71,
+              72, 74, 76, 77, 78, 79, 80, 82, 83, 84, 85, 88, 90)
+
+# Convert to character for labeling
+families <- as.character(families)
+
+# Create all possible plate-column combinations (70 plates × 5 columns = 350 spots)
+plates <- 1:70
+columns <- 1:5
+plate_column_pairs <- expand.grid(Plate = plates, Column = columns)
+
+# Shuffle and take the first 50 combinations
+shuffled_pairs <- plate_column_pairs[sample(nrow(plate_column_pairs)), ]
+#assigned_pairs <- shuffled_pairs[1:length(families), ]
+
+# Create assignment table
+assignment <- data.frame(
+  Plate = shuffled_pairs$Plate,
+  Column = shuffled_pairs$Column,
+  Family = families
+)
+
+# Optional: sort by Plate number for readability
+assignment <- assignment[order(assignment$Plate, assignment$Column), ]
+
+# View the assignment
+print(assignment)
+
+#save output file of plate assignments 
+write.csv(assignment, "output/plate-maps/plate-assignments.csv")
+```
+
