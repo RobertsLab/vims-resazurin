@@ -38,7 +38,7 @@ library(emmeans)
 library(tools)
 ```
 
-# Fluorescence 
+# Temperature test data  
 
 ## Load data 
 
@@ -283,7 +283,7 @@ Save data frame.
 full_data
 ```
 
-## Models and Plots    
+## Models and Plots 
 
 Plot raw data. 
 ```{r}
@@ -334,3 +334,44 @@ ggsave(plot3, filename="figures/temperature-trials/family_trajectories_temp.png"
 
 
 
+
+## 40C models
+
+Plot raw data. 
+```{r}
+plot1a<-full_data%>%
+  filter(temperature=="40C")%>%
+  ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(date, family, plate, well)))+
+  facet_wrap(~temperature)+
+  geom_point()+
+  geom_line()+
+  theme_classic();plot1a
+```
+
+Run a model on metabolic rates. 
+
+```{r}
+model<-full_data%>%
+  filter(temperature=="40C")%>%
+  
+  lmer((value)^(1/3) ~ family * timepoint + (1|well:plate) + (1|plate), data=.)
+
+anova(model)
+summary(model)
+qqPlot(residuals(model))
+
+emm<-emmeans(model, ~family|timepoint)
+pairs(emm)
+```
+
+Plot as a model for each family at each temperature. 
+
+```{r}
+plot2a<-full_data%>%
+  filter(temperature=="40C")%>%
+  
+  ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(date, family, temperature)))+
+  facet_wrap(~temperature)+
+  geom_smooth(stat="smooth")+
+  theme_classic();plot2a
+```
