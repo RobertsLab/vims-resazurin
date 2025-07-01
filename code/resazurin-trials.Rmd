@@ -14,7 +14,14 @@ editor_options:
   chunk_output_type: console
 ---
 
-This script analyzes resazurin assays conducted at VIMS.     
+This script analyzes resazurin assays conducted at VIMS.  
+
+Things we want to calculate: 
+
+- Inter and intra family variability in metabolism 
+- Temperature phases of metabolism 
+- Correlation with traits 
+- End point total fluorescence 
 
 # Set up 
 
@@ -243,6 +250,16 @@ full_data%>%
   theme_classic()
 ```
 
+```{r}
+full_data%>%
+  ggplot(aes(x=timepoint, y=fluorescence.corr, colour=length.mm, group=interaction(date, well, plate)))+
+  facet_wrap(~date)+
+  scale_colour_gradient(low="darkblue", high="red")+
+  geom_point()+
+  geom_line()+
+  theme_classic()
+```
+
 Size normalize data.
 ```{r}
 #normalize by length
@@ -262,18 +279,29 @@ full_data%>%
   theme_classic()
 ```
 
+Plot by area normalized colored by size. 
+```{r}
+full_data%>%
+  ggplot(aes(x=timepoint, y=fluorescence.corr.mm, colour=length.mm, group=interaction(date, well, plate)))+
+  facet_wrap(~date)+
+  scale_colour_gradient(low="darkblue", high="red")+
+  geom_point()+
+  geom_line()+
+  theme_classic()
+```
+
 Remove unnecessary columns. 
 
 ```{r}
 str(full_data)
 
 full_data<-full_data%>%
-  select(!resazurin_counts)%>%
+  #select(!resazurin_counts)%>%
   select(!type)%>%
-  select(!mean_blank)%>%
-  select(!length.mm)%>%
-  select(!fluorescence.corr)%>%
-  select(!fluorescence.norm)
+  select(!mean_blank)
+  #select(!length.mm)%>%
+  #select(!fluorescence.corr)%>%
+  #select(!fluorescence.norm)
 
 str(full_data)
 
@@ -281,9 +309,37 @@ full_data<-full_data%>%
   rename(value=fluorescence.corr.mm)
 ```
 
+### Remove oversaturated samples 
+
+Remove any sample that reached > 2800 raw value at any point during the trials, these were over saturated and data is unreliable. 
+
+```{r}
+full_data%>%
+  filter(resazurin_counts>3000)%>%
+  group_by(date, plate, well)%>%
+  mutate(unique=paste(date, plate, well))
+
+#there are 150 samples that went above the threshold
+
+list<-full_data%>%
+  filter(resazurin_counts>3000)%>%
+  group_by(date, plate, well)%>%
+  mutate(unique=paste(date, plate, well))%>%
+  pull(unique)%>%
+  unique()
+```
+
+Remove the 155 samples that exceeded the threshold of 2800 sometime during the trial. 
+
+```{r}
+full_data<-full_data%>%
+  mutate(unique=paste(date, plate, well))%>%
+  filter(!unique %in% list)
+```
+
 ## Models and Plots - by family 
 
-Plot raw data. 
+Plot individual data. 
 ```{r}
 plot1<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(date, family, plate, well)))+
@@ -318,8 +374,12 @@ plot2<-full_data%>%
   theme_classic();plot2
 
 ggsave(plot2, filename="figures/trials/family_trajectories.png", width=12, height=12, units="in")
-```
 
+plot2b<-full_data%>%
+  ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(date, family, temperature)))+
+  stat_smooth(geom="smooth", method="loess", se=FALSE)+
+  theme_classic();plot2b
+```
 
 ## Models and Plots - by phenotype 
 
@@ -332,7 +392,7 @@ plot1a<-full_data%>%
   geom_line()+
   theme_classic();plot1a
 
-ggsave(plot1, filename="figures/trials/individual_trajectories_phenotype.png", width=8, height=8, units="in")
+ggsave(plot1a, filename="figures/trials/individual_trajectories_phenotype.png", width=8, height=8, units="in")
 ```
 
 Run a model on metabolic rates. 
@@ -352,10 +412,148 @@ Plot as a model for each phenotype.
 
 ```{r}
 plot2a<-full_data%>%
-  ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(date, phenotype, temperature)))+
-  geom_smooth(stat="smooth")+
+  ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(date, phenotype)))+
+  stat_smooth(geom="smooth", method="loess")+
   theme_classic();plot2a
 
-ggsave(plot2, filename="figures/trials/phenotype_trajectories.png", width=12, height=12, units="in")
+ggsave(plot2a, filename="figures/trials/phenotype_trajectories.png", width=12, height=12, units="in")
 ```
 
+## Calculate change in fluorescence between each timepoint 
+
+Convert to wide format and calculate.  
+
+```{r}
+data_wide <- full_data %>%
+  select(date, plate, well, family, timepoint, phenotype, value)%>%
+  pivot_wider(names_from = timepoint, values_from = value)
+
+deltas <- data_wide %>%
+  mutate(
+    delta_T0_T1 = `1` - `0`,
+    delta_T1_T2 = `2` - `1`,
+    delta_T2_T3 = `3` - `2`,
+    delta_T3_T4 = `4` - `3`
+  )
+```
+
+Convert back to long format. 
+
+```{r}
+deltas_long<-deltas%>%
+  pivot_longer(names_to = "delta", values_to = "change", cols=c(delta_T0_T1:delta_T3_T4))
+```
+
+Plot deltas for each family. 
+
+Plot all together 
+```{r}
+plot4<-deltas_long%>%
+  ggplot(aes(x=delta, y=change, colour=family))+
+  facet_wrap(~date)+
+  geom_violin()+
+  theme_classic();plot4
+
+plot4a<-deltas_long%>%
+  ggplot(aes(x=delta, y=change, colour=phenotype))+
+  facet_wrap(~date)+
+  geom_violin()+
+  theme_classic();plot4a
+```
+
+T0-T1 
+
+```{r}
+plot5<-deltas%>%
+  ggplot(aes(x=family, y=delta_T0_T1, colour=family, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot5
+
+plot5a<-deltas%>%
+  ggplot(aes(x=phenotype, y=delta_T0_T1, colour=phenotype, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot5a
+```
+
+T1-T2 
+
+```{r}
+plot6<-deltas%>%
+  ggplot(aes(x=family, y=delta_T1_T2, colour=family, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot6
+
+plot6a<-deltas%>%
+  ggplot(aes(x=phenotype, y=delta_T1_T2, colour=phenotype, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot6a
+```
+
+T2-T3 
+
+```{r}
+plot6<-deltas%>%
+  ggplot(aes(x=family, y=delta_T2_T3, colour=family, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot6
+
+plot6a<-deltas%>%
+  ggplot(aes(x=phenotype, y=delta_T2_T3, colour=phenotype, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot6a
+```
+
+T3-T4 
+
+```{r}
+plot7<-deltas%>%
+  ggplot(aes(x=family, y=delta_T3_T4, colour=family, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot7
+
+plot7a<-deltas%>%
+  ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot7a
+```
+
+
+
+## Calculate total change in fluorescence over the entire trial
+
+Total fluorescence over the course of the trial is equivalent to the value at TP4 (all values start at 0).  
+```{r}
+end<-full_data%>%
+  filter(timepoint=="4")
+```
+
+Plot total by family and phenotype. 
+
+```{r}
+plot9<-end%>%
+  ggplot(aes(x=phenotype, y=value, colour=phenotype, group=interaction(date, family, temperature)))+
+  geom_violin()+
+  theme_classic();plot9
+
+plot9a<-end%>%
+  ggplot(aes(x=phenotype, y=value, colour=phenotype))+
+  geom_violin(aes(fill=NULL))+
+  geom_point(position=position_jitterdodge())+
+  theme_classic();plot9a
+```
+
+```{r}
+model<-end%>%
+  lmer((value)^(1/3) ~ family + (1|plate), data=.)
+
+anova(model)
+summary(model)
+qqPlot(residuals(model))
+
+model<-end%>%
+  lmer((value)^(1/3) ~ phenotype + (1|plate), data=.)
+
+anova(model)
+summary(model)
+qqPlot(residuals(model))
+```
