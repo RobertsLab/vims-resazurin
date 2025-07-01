@@ -317,7 +317,7 @@ plot2<-full_data%>%
   geom_smooth(stat="smooth")+
   theme_classic();plot2
 
-ggsave(plot2, filename="figures/temperature-trials/family_trajectories.png", width=8, height=8, units="in")
+ggsave(plot2, filename="figures/temperature-trials/family_trajectories.png", width=10, height=8, units="in")
 ```
 
 ```{r}
@@ -327,7 +327,7 @@ plot3<-full_data%>%
   geom_smooth(stat="smooth")+
   theme_classic();plot3
 
-ggsave(plot3, filename="figures/temperature-trials/family_trajectories_temp.png", width=8, height=8, units="in")
+ggsave(plot3, filename="figures/temperature-trials/family_trajectories_temp.png", width=11, height=6, units="in")
 ```
 
 
