@@ -21,7 +21,6 @@ Things we want to calculate:
 - Inter and intra family variability in metabolism 
 - Temperature phases of metabolism 
 - Correlation with traits 
-- End point total fluorescence 
 
 # Set up 
 
@@ -516,7 +515,6 @@ plot7a<-deltas%>%
   geom_violin()+
   theme_classic();plot7a
 ```
-
 
 
 ## Calculate total change in fluorescence over the entire trial
