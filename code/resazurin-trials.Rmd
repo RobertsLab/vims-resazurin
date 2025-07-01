@@ -42,6 +42,15 @@ library(car)
 library(effects)
 library(emmeans)
 library(tools)
+library(pracma)
+library(rptR)
+library(fda)
+library(nls2)
+library(purrr)
+library(broom)
+library(pheatmap)
+library(vegan)
+library(ggridges)
 ```
 
 # Resazurin Trials   
@@ -453,6 +462,8 @@ plot4<-deltas_long%>%
   geom_violin()+
   theme_classic();plot4
 
+ggsave(plot4, filename="figures/trials/delta_values.png", width=12, height=10, units="in")
+
 plot4a<-deltas_long%>%
   ggplot(aes(x=delta, y=change, colour=phenotype))+
   facet_wrap(~date)+
@@ -516,7 +527,6 @@ plot7a<-deltas%>%
   theme_classic();plot7a
 ```
 
-
 ## Calculate total change in fluorescence over the entire trial
 
 Total fluorescence over the course of the trial is equivalent to the value at TP4 (all values start at 0).  
@@ -533,11 +543,15 @@ plot9<-end%>%
   geom_violin()+
   theme_classic();plot9
 
+ggsave(plot9, filename="figures/trials/total_values_family.png", width=10, height=8, units="in")
+
 plot9a<-end%>%
   ggplot(aes(x=phenotype, y=value, colour=phenotype))+
   geom_violin(aes(fill=NULL))+
   geom_point(position=position_jitterdodge())+
   theme_classic();plot9a
+
+ggsave(plot9a, filename="figures/trials/total_values_phenotype.png", width=10, height=8, units="in")
 ```
 
 ```{r}
@@ -554,4 +568,237 @@ model<-end%>%
 anova(model)
 summary(model)
 qqPlot(residuals(model))
+```
+
+## Area under the curve 
+
+Area under the curve (AUC): Summarizes total metabolic activity per oyster.
+
+```{r}
+aucs <- full_data %>%
+  mutate(time=as.numeric(timepoint))%>%
+  group_by(date, plate, well, family, phenotype) %>%
+  summarise(AUC = trapz(time, value))
+```
+
+```{r}
+plot10<-ggplot(aucs, aes(x = family, y = AUC, colour = phenotype)) +
+  geom_violin(trim = FALSE) +
+  geom_jitter(width = 0.1, alpha = 0.3) +
+  labs(title = "AUC by Family", x = "Family", y = "AUC") +
+  theme_classic();plot10
+
+ggsave(plot10, filename="figures/trials/auc_family.png", width=10, height=8, units="in")
+
+plot10a<-ggplot(aucs, aes(x = phenotype, y = AUC, colour = phenotype)) +
+  geom_violin(trim = FALSE) +
+  geom_jitter(width = 0.1, alpha = 0.3) +
+  labs(title = "AUC by Phenotype", x = "Family", y = "AUC") +
+  theme_classic(); plot10a
+
+ggsave(plot10a, filename="figures/trials/auc_phenotype.png", width=8, height=8, units="in")
+```
+
+## Repeatability (Intra-class Correlation)
+
+How similar are metabolic rates among oysters within the same family, compared to between families?
+
+Close to 0 = Most variation is within families; little family structure. Metabolic rate is more influenced by individual-level noise, environment, or measurement error.
+
+Moderate 0.3-0.5 = There's moderate consistency among family members. Families differ somewhat in metabolic rates.
+
+High 0.6-1.0 = 	Most variation is between families; oysters from the same family have very similar metabolic rates. This suggests strong genetic or shared environmental control.
+```{r}
+repeat_model <- rpt(value ~ timepoint + (1|family), grname = "family", data = full_data, datatype = "Gaussian")
+
+summary(repeat_model)
+```
+
+Repeatability (R) value is 0.175 here - most variation is within families with little family structure 
+
+## Heritability estimates  
+
+Heritability estimate to compute the proportion of phenotypic variance that is genetic. 
+
+The H2 value close to 0 indicates variation is within family largely. Values between 0.2 - 0.4 indicates moderate heritability. Values >0.5 indicate stronger heritability.  
+
+```{r}
+# Convert to matrix: rows = oysters, columns = timepoints
+wide_data <- full_data %>% select(!c(length.mm, fluorescence.norm, fluorescence.corr, resazurin_counts)) %>% pivot_wider(names_from = timepoint, values_from = value)
+
+fluor_matrix <- as.matrix(wide_data[,-c(1:7)])  # remove ID columns
+fluor_fd <- Data2fd(argvals = 0:4, y = t(fluor_matrix))
+plot(fluor_fd)
+
+## Estimate heritability 
+anova_model <- aov(value ~ family, data = full_data)
+summary(anova_model)
+
+# Rough heritability estimate if design is appropriate:
+MS_family <- summary(anova_model)[[1]]["family", "Mean Sq"]
+MS_resid <- summary(anova_model)[[1]]["Residuals", "Mean Sq"]
+k<-length(unique(full_data$unique))
+
+heritability <- (MS_family - MS_resid) / (MS_family + (k - 1) * MS_resid)  # k = number of replicates
+```
+
+Heritability = 0.0058 (low heritability, matching family variation above).  
+
+## Fit nonlinear curves 
+
+```{r}
+# Example for one oyster
+oyster_data <- full_data %>% filter(unique == "20250701 plate1 A02")%>%
+  mutate(time=as.numeric(timepoint))
+
+fit <- nls(value ~ a * exp(b * time), data = oyster_data,
+           start = list(a = 100, b = -0.1))
+
+summary(fit)
+
+oyster_data <- oyster_data %>%
+  mutate(predicted = predict(fit, newdata = oyster_data))
+
+ggplot(oyster_data, aes(x = time, y = value)) +
+  geom_point(color = "blue", size = 3) +  # Raw data points
+  geom_line(aes(y = predicted), color = "red", linewidth = 1.2) +  # Fitted curve
+  labs(title = "Fitted Exponential Curve vs. Raw Data",
+       x = "Time (hours)",
+       y = "Fluorescence (Metabolic Rate)") +
+  theme_minimal()
+```
+
+Run for all oysters 
+
+```{r}
+model_results <- full_data %>%
+  mutate(time = as.numeric(timepoint)) %>%
+  group_by(unique, family, phenotype) %>%
+  nest() %>%
+  mutate(
+    fit = map(data, ~ tryCatch(
+      nls(value ~ a * exp(b * time), data = .x,
+          start = list(a = 100, b = -0.1),
+          control = nls.control(maxiter = 100)),
+      error = function(e) NULL
+    )),
+    params = map(fit, ~ if (!is.null(.x)) tidy(.x) else NULL)
+  ) %>%
+  unnest(params) %>%
+  select(unique, family, phenotype, term, estimate) %>%
+  pivot_wider(names_from = term, values_from = estimate)
+
+family_summary <- model_results %>%
+  group_by(family, phenotype) %>%
+  summarise(
+    mean_a = mean(a, na.rm = TRUE),
+    sd_a = sd(a, na.rm = TRUE),
+    mean_b = mean(b, na.rm = TRUE),
+    sd_b = sd(b, na.rm = TRUE),
+    n = n()
+  )
+
+plot11<-ggplot(family_summary, aes(x = reorder(family, mean_b), y = mean_b)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "darkred", size = 3) +
+  geom_errorbar(aes(ymin = mean_b - sd_b, ymax = mean_b + sd_b), width = 0.2) +
+  labs(title = "Average Exponential Decay Rate (b) by Family",
+       x = "Family", y = "Mean b (Rate Constant)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1));plot11
+
+ggsave(plot11, filename="figures/trials/exponential_growth_family.png", width=12, height=8, units="in")
+```
+
+Rate of metabolic growth/metabolic change over time is positive for all and is higher for some families.  
+
+## Clustering metabolic profiles 
+
+Cluster to find groups of oysters that behave similarly.  
+
+```{r}
+df_matrix <- full_data %>%
+  select(!c(resazurin_counts, length.mm, fluorescence.norm, fluorescence.corr))%>%
+  pivot_wider(names_from = timepoint, values_from = value) %>%
+  ungroup()%>%
+  select(!c(well, date, plate, family, temperature, phenotype))%>%
+  column_to_rownames("unique") %>%
+  as.matrix()
+
+clusters <- kmeans(df_matrix, centers = 3)
+
+df_clustered <- data.frame(oyster_id = rownames(df_matrix), cluster = clusters$cluster)
+```
+
+Plot a heatmap of cluster. 
+```{r}
+# Reorder matrix by cluster assignment
+ordered_matrix <- df_matrix[order(clusters$cluster), ]
+
+# Annotate rows with cluster info
+annotation <- data.frame(cluster = as.factor(clusters$cluster))
+rownames(annotation) <- rownames(df_matrix)
+
+# Plot heatmap
+pheatmap(ordered_matrix, cluster_rows = FALSE, cluster_cols = FALSE,
+         annotation_row = annotation,
+         main = "Heatmap of Fluorescence Profiles by Cluster")
+```
+
+Plot curves by cluster 
+```{r}
+# Reshape df_matrix back into long format for plotting
+df_long <- df_matrix %>%
+  as.data.frame() %>%
+  rownames_to_column("oyster_id") %>%
+  pivot_longer(-oyster_id, names_to = "timepoint", values_to = "value") %>%
+  left_join(df_clustered, by = c("oyster_id")) %>%
+  mutate(time = as.numeric(gsub("T", "", timepoint)))  # convert T0, T1, etc. to numeric
+
+# Plot average fluorescence over time by cluster
+plot12<-ggplot(df_long, aes(x = time, y = value, group = oyster_id)) +
+  stat_summary(aes(color = as.factor(cluster)), fun = mean, geom = "line", size = 1.2) +
+  labs(title = "Average Fluorescence Curve by Cluster",
+       x = "Time (hours)", y = "Fluorescence", color = "Cluster") +
+  theme_classic();plot12
+
+ggsave(plot12, filename="figures/trials/cluster_fluorescence_patterns.png", width=8, height=8, units="in")
+```
+
+Show families. 
+
+```{r}
+df_clustered_full <- full_data %>%
+  select(unique, family) %>%
+  distinct() %>%
+  left_join(df_clustered, by = c("unique" = "oyster_id"))
+
+plot13<-ggplot(df_clustered_full, aes(x = family, fill = factor(cluster))) +
+  geom_bar(position = "fill") +  # stacked proportional bar
+  labs(title = "Proportion of Clusters Within Each Family",
+       x = "Family", y = "Proportion of Oysters", fill = "Cluster") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme_classic();plot13
+
+ggsave(plot13, filename="figures/trials/cluster_assignments_family.png", width=10, height=8, units="in")
+```
+
+## Ridge plots 
+
+View distrubution of fluorescence values over time. 
+
+```{r}
+plot14<-ggplot(full_data, aes(x = value, y = as.factor(timepoint), fill = family)) +
+  geom_density_ridges(alpha = 0.7) +
+  labs(title = "Distribution of Fluorescence by Family")+
+  theme_classic();plot14
+
+ggsave(plot14, filename="figures/trials/ridge_family.png", width=10, height=8, units="in")
+
+plot15<-ggplot(full_data, aes(x = value, y = as.factor(timepoint), fill = phenotype)) +
+  geom_density_ridges(alpha = 0.7) +
+  labs(title = "Distribution of Fluorescence by Phenotype")+
+  theme_classic();plot15
+
+ggsave(plot15, filename="figures/trials/ridge_phenotype.png", width=10, height=8, units="in")
 ```
