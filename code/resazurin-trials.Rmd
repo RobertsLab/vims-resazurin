@@ -16,12 +16,6 @@ editor_options:
 
 This script analyzes resazurin assays conducted at VIMS.  
 
-Things we want to calculate: 
-
-- Inter and intra family variability in metabolism 
-- Temperature phases of metabolism 
-- Correlation with traits 
-
 # Set up 
 
 Set up workspace, set options, and load required packages.    
@@ -54,7 +48,6 @@ library(ggridges)
 ```
 
 # Resazurin Trials   
-
 ## Load data 
 
 ```{r}
@@ -525,6 +518,31 @@ plot7a<-deltas%>%
   ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(date, family)))+
   geom_violin()+
   theme_classic();plot7a
+
+plot7b<-deltas%>%
+  ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(date, phenotype)))+
+  geom_violin()+
+  theme_classic();plot7b
+```
+
+Calculate the difference between T0-1 and T3-4 values 
+
+```{r}
+difference<-deltas%>%
+  mutate(baseline=delta_T3_T4, acute=delta_T0_T1)%>%
+  mutate(difference=acute-baseline)
+
+hist(difference$difference)
+
+plot7d<-difference%>%
+  ggplot(aes(x=phenotype, y=difference, colour=phenotype, group=interaction(date, family)))+
+  geom_violin()+
+  theme_classic();plot7d
+
+plot7e<-difference%>%
+  ggplot(aes(x=phenotype, y=difference, colour=phenotype, group=interaction(date, phenotype)))+
+  geom_violin()+
+  theme_classic();plot7e
 ```
 
 ## Calculate total change in fluorescence over the entire trial
@@ -802,3 +820,5 @@ plot15<-ggplot(full_data, aes(x = value, y = as.factor(timepoint), fill = phenot
 
 ggsave(plot15, filename="figures/trials/ridge_phenotype.png", width=10, height=8, units="in")
 ```
+
+## Correlation with traits 
