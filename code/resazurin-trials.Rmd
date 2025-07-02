@@ -393,8 +393,6 @@ ggsave(plot1, filename="figures/trials/individual_trajectories.png", width=10, h
 
 Run a model on metabolic rates. 
 
-Add date when we have multiple dates. 
-
 ```{r}
 model<-full_data%>%
   lmer((value)^(1/3) ~ family * timepoint + (1|well:plate:date) + (1|plate) + (1|date), data=.)
@@ -454,8 +452,6 @@ plot1a<-full_data%>%
 ```
 
 Run a model on metabolic rates. 
-
-Add date when we have multiple dates. 
 
 ```{r}
 model<-full_data%>%
