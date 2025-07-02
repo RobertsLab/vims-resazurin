@@ -968,6 +968,26 @@ plot16<-merged%>%
 ggsave(plot16, filename="figures/correlations/auc_survival-low-salinity.png", width=8, height=6, units="in")
 ```
 
+Run a statistical test for this corrleation. 
+
+```{r}
+model_data<-merged%>%
+  group_by(family, phenotype, `survival-low-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="high-salinity")
+  
+cor.test(model_data$AUC, model_data$`survival-low-salinity`)
+
+model_data<-merged%>%
+  group_by(family, phenotype, `survival-low-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="low-salinity")
+  
+cor.test(model_data$AUC, model_data$`survival-low-salinity`)
+```
+
+Significant correlation for low salinity but not high salinity selected groups. 
+
 Correlation of weight in high salinity and total metabolic activity. 
 
 ```{r}
@@ -1058,6 +1078,26 @@ plot20<-merged2%>%
 
 ggsave(plot20, filename="figures/correlations/stress-rate_survival-low-salinity.png", width=8, height=6, units="in")
 ```
+
+Run a statistical test for this corrleation. 
+
+```{r}
+model_data<-merged2%>%
+  group_by(family, phenotype, `survival-low-salinity`)%>%
+  summarise(delta=mean(delta_T0_T1))%>%
+  filter(phenotype=="high-salinity")
+  
+cor.test(model_data$delta, model_data$`survival-low-salinity`)
+
+model_data<-merged2%>%
+  group_by(family, phenotype, `survival-low-salinity`)%>%
+  summarise(delta=mean(delta_T0_T1))%>%
+  filter(phenotype=="low-salinity")
+  
+cor.test(model_data$delta, model_data$`survival-low-salinity`)
+```
+
+Significant correlation for low salinity but not high salinity selected groups. 
 
 Correlation of weight in high salinity and total metabolic activity. 
 
