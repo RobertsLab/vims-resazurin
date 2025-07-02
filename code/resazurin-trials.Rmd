@@ -338,8 +338,9 @@ full_data<-full_data%>%
   filter(!unique %in% list)
 ```
 
+Ideal size range is in the middle range of what we used for these trials (~ >10mm and less that 18mm) 
 ```{r}
-hist(length.mm)
+hist(full_data$length.mm)
 ```
 
 ## Separate testing and experimental plates 
@@ -359,11 +360,23 @@ View the test data plates. Plate A/71 was run at 4°C and plate B/72 was run at 
 plot0<-test_data%>%
   ggplot(aes(x=timepoint, y=value, colour=temperature, group=interaction(date, family, plate, well)))+
   geom_point()+
+  scale_colour_manual(labels=c("21-22°C", "35°C", "12-17°C"), values=c("orange", "darkred", "blue3"))+
   geom_line()+
   theme_classic();plot0
 ```
 
 ## Models and Plots - by family 
+
+Set order of families for analysis. 
+
+```{r}
+levels_list<-c(2, 5, 6, 7, 12, 14, 15, 16, 19, 20, 21, 24, 25, 26, 31, 32, 33, 34, 36,
+              37, 38, 39, 41, 42, 43, 47, 48, 49, 50, 51, 54, 55, 57, 60, 61, 70, 71,
+              72, 74, 76, 77, 78, 79, 80, 82, 83, 84, 85, 88, 90)
+
+full_data<-full_data%>%
+  mutate(family=factor(family, levels=levels_list))
+```
 
 Plot individual data. 
 ```{r}
@@ -416,13 +429,15 @@ plot2c<-full_data%>%
   geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2c
 
-ggsave(plot2c, filename="figures/trials/family_trajectories.png", width=12, height=12, units="in")
+ggsave(plot2c, filename="figures/trials/family_trajectories.png", width=13, height=12, units="in")
 
 plot2d<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(family, temperature)))+
   geom_smooth(stat="smooth", method="loess", se=FALSE)+
   geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2d
+
+ggsave(plot2d, filename="figures/trials/family_trajectories2.png", width=8, height=8, units="in")
 ```
 
 ## Models and Plots - by phenotype 
@@ -436,8 +451,6 @@ plot1a<-full_data%>%
   geom_line()+
   geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot1a
-
-ggsave(plot1a, filename="figures/trials/individual_trajectories_phenotype.png", width=8, height=8, units="in")
 ```
 
 Run a model on metabolic rates. 
@@ -446,7 +459,7 @@ Add date when we have multiple dates.
 
 ```{r}
 model<-full_data%>%
-  lmer((value)^(1/3) ~ timepoint * phenotype + + (1|well:plate:date) + (1|plate) + (1|date) + (1|family), data=.)
+  lmer((value)^(1/3) ~ timepoint * phenotype + (1|well:plate:date) + (1|plate) + (1|date) + (1|family), data=.)
 
 anova(model)
 summary(model)
@@ -468,12 +481,12 @@ plot2b<-full_data%>%
   geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2b
 
-ggsave(plot2b, filename="figures/trials/phenotype_trajectories.png", width=12, height=12, units="in")
+ggsave(plot2b, filename="figures/trials/phenotype_trajectories.png", width=8, height=8, units="in")
 ```
 
-## Calculate change in fluorescence between each timepoint CHANGE TO PERCENT CHANGE 
+## Calculate change in fluorescence between each timepoint 
 
-Convert to wide format and calculate.  
+Convert to wide format and calculate percent change in fluorescence.    
 
 ```{r}
 data_wide <- full_data %>%
@@ -482,10 +495,10 @@ data_wide <- full_data %>%
 
 deltas <- data_wide %>%
   mutate(
-    delta_T0_T1 = `1` - `0`,
-    delta_T1_T2 = `2` - `1`,
-    delta_T2_T3 = `3` - `2`,
-    delta_T3_T4 = `4` - `3`
+    delta_T0_T1 = (`1` - `0`),
+    delta_T1_T2 = (`2` - `1`)/`1`,
+    delta_T2_T3 = (`3` - `2`)/`2`,
+    delta_T3_T4 = (`4` - `3`)/`3`
   )
 ```
 
@@ -494,6 +507,18 @@ Convert back to long format.
 ```{r}
 deltas_long<-deltas%>%
   pivot_longer(names_to = "delta", values_to = "change", cols=c(delta_T0_T1:delta_T3_T4))
+```
+
+```{r}
+hist(deltas_long$change)
+```
+
+Remove high and low value outliers
+```{r}
+deltas_long<-deltas_long%>%
+  filter(change>-20 & change <40)
+
+hist(deltas_long$change)
 ```
 
 Plot deltas for each family. 
@@ -506,8 +531,6 @@ plot4<-deltas_long%>%
   geom_violin()+
   theme_classic();plot4
 
-ggsave(plot4, filename="figures/trials/delta_values.png", width=12, height=10, units="in")
-
 plot4a<-deltas_long%>%
   ggplot(aes(x=delta, y=change, colour=phenotype))+
   facet_wrap(~date)+
@@ -519,12 +542,12 @@ T0-T1
 
 ```{r}
 plot5<-deltas%>%
-  ggplot(aes(x=family, y=delta_T0_T1, colour=family, group=interaction(date, family)))+
+  ggplot(aes(x=family, y=delta_T0_T1, colour=family, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot5
 
 plot5a<-deltas%>%
-  ggplot(aes(x=phenotype, y=delta_T0_T1, colour=phenotype, group=interaction(date, family)))+
+  ggplot(aes(x=phenotype, y=delta_T0_T1, colour=phenotype, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot5a
 ```
@@ -533,12 +556,14 @@ T1-T2
 
 ```{r}
 plot6<-deltas%>%
-  ggplot(aes(x=family, y=delta_T1_T2, colour=family, group=interaction(date, family)))+
+  filter(delta_T1_T2>-10 & delta_T1_T2 <40)%>%
+  ggplot(aes(x=family, y=delta_T1_T2, colour=family, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot6
 
 plot6a<-deltas%>%
-  ggplot(aes(x=phenotype, y=delta_T1_T2, colour=phenotype, group=interaction(date, family)))+
+  filter(delta_T1_T2>-10 & delta_T1_T2 <40)%>%
+  ggplot(aes(x=phenotype, y=delta_T1_T2, colour=phenotype, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot6a
 ```
@@ -547,12 +572,14 @@ T2-T3
 
 ```{r}
 plot6<-deltas%>%
-  ggplot(aes(x=family, y=delta_T2_T3, colour=family, group=interaction(date, family)))+
+  filter(delta_T2_T3>-10 & delta_T2_T3 <40)%>%
+  ggplot(aes(x=family, y=delta_T2_T3, colour=family, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot6
 
 plot6a<-deltas%>%
-  ggplot(aes(x=phenotype, y=delta_T2_T3, colour=phenotype, group=interaction(date, family)))+
+  filter(delta_T2_T3>-10 & delta_T2_T3 <40)%>%
+  ggplot(aes(x=phenotype, y=delta_T2_T3, colour=phenotype, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot6a
 ```
@@ -561,17 +588,20 @@ T3-T4
 
 ```{r}
 plot7<-deltas%>%
-  ggplot(aes(x=family, y=delta_T3_T4, colour=family, group=interaction(date, family)))+
+  filter(delta_T3_T4>-10 & delta_T3_T4 <40)%>%
+  ggplot(aes(x=family, y=delta_T3_T4, colour=family, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot7
 
 plot7a<-deltas%>%
-  ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(date, family)))+
+  filter(delta_T3_T4>-10 & delta_T3_T4 <40)%>%
+  ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot7a
 
 plot7b<-deltas%>%
-  ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(date, phenotype)))+
+  filter(delta_T3_T4>-10 & delta_T3_T4 <40)%>%
+  ggplot(aes(x=phenotype, y=delta_T3_T4, colour=phenotype, group=interaction(phenotype)))+
   geom_violin()+
   theme_classic();plot7b
 ```
@@ -586,13 +616,14 @@ difference<-deltas%>%
 hist(difference$difference)
 
 plot7d<-difference%>%
-  ggplot(aes(x=phenotype, y=difference, colour=phenotype, group=interaction(date, family)))+
+  ggplot(aes(x=phenotype, y=difference, colour=phenotype, group=interaction(family)))+
   geom_violin()+
   theme_classic();plot7d
 
 plot7e<-difference%>%
-  ggplot(aes(x=phenotype, y=difference, colour=phenotype, group=interaction(date, phenotype)))+
+  ggplot(aes(x=phenotype, y=difference, colour=phenotype, group=interaction(phenotype)))+
   geom_violin()+
+  geom_point(position=position_jitterdodge())+
   theme_classic();plot7e
 ```
 
@@ -609,10 +640,18 @@ Plot total by family and phenotype.
 ```{r}
 plot9<-end%>%
   ggplot(aes(x=phenotype, y=value, colour=phenotype, group=interaction(date, family, temperature)))+
+  facet_wrap(~date)+
   geom_violin()+
   theme_classic();plot9
 
-ggsave(plot9, filename="figures/trials/total_values_family.png", width=10, height=8, units="in")
+ggsave(plot9, filename="figures/trials/total_values_family_date.png", width=10, height=8, units="in")
+
+plot9b<-end%>%
+  ggplot(aes(x=phenotype, y=value, colour=phenotype, group=interaction(family, temperature)))+
+  geom_violin()+
+  theme_classic();plot9b
+
+ggsave(plot9b, filename="figures/trials/total_values_family.png", width=10, height=8, units="in")
 
 plot9a<-end%>%
   ggplot(aes(x=phenotype, y=value, colour=phenotype))+
@@ -683,13 +722,12 @@ repeat_model <- rpt(value ~ timepoint + (1|family), grname = "family", data = fu
 summary(repeat_model)
 ```
 
-Repeatability (R) value is 0.175 here - most variation is within families with little family structure 
+Repeatability (R) value is 0.135 here - most variation is within families with little family structure 
 
 ## Heritability estimates  
 
 Heritability estimate to compute the proportion of phenotypic variance that is genetic. 
-
-The H2 value close to 0 indicates variation is within family largely. Values between 0.2 - 0.4 indicates moderate heritability. Values >0.5 indicate stronger heritability.  
+The H2 value close to 0 indicates variation is within family largely. Values between 0.2 - 0.4 indicates moderate heritability. Values >0.5 indicate stronger heritability. 
 
 ```{r}
 # Convert to matrix: rows = oysters, columns = timepoints
@@ -709,9 +747,10 @@ MS_resid <- summary(anova_model)[[1]]["Residuals", "Mean Sq"]
 k<-length(unique(full_data$unique))
 
 heritability <- (MS_family - MS_resid) / (MS_family + (k - 1) * MS_resid)  # k = number of replicates
+heritability
 ```
 
-Heritability = 0.0058 (low heritability, matching family variation above).  
+Heritability = 0.0074 (low heritability, matching family variation above).  
 
 ## Fit nonlinear curves 
 
