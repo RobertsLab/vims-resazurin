@@ -937,10 +937,6 @@ plot15<-merged%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Total Metabolic Activity (AUC)",
@@ -962,10 +958,6 @@ plot16<-merged%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Total Metabolic Activity (AUC)",
@@ -987,10 +979,6 @@ plot17<-merged%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Total Metabolic Activity (AUC)",
@@ -1011,10 +999,6 @@ plot18<-merged%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Total Metabolic Activity (AUC)",
@@ -1044,10 +1028,6 @@ plot19<-merged2%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Metabolic Rate - Acute Stress",
@@ -1069,10 +1049,6 @@ plot20<-merged2%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Metabolic Rate - Acute Stress",
@@ -1094,10 +1070,6 @@ plot21<-merged2%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Metabolic Rate - Acute Stress",
@@ -1118,10 +1090,6 @@ plot22<-merged2%>%
   facet_wrap(~phenotype)+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
-  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
-           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
-           size = 5) +  # correlation stat
-  theme_minimal() +
   labs(
     title = "Scatter Plot with Pearson Correlation",
     x = "Total Metabolic Activity (AUC)",
