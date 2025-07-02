@@ -38,24 +38,17 @@ library(emmeans)
 library(tools)
 ```
 
-# Load data 
+# Load and plot data 
 
 ```{r}
-temps<-read_excel(path="data/temperature.xlsx")
-```
+temps<-read_excel(path="data/temperature.xlsx")%>%mutate(date=as.character(date))
 
-# Plot data 
-
-```{r}
 temps%>%
-  ggplot(aes(x=timepoint, y=temperature))+
-  facet_wrap(~date)+
+  ggplot(aes(x=timepoint, y=temperature, colour=date))+
   geom_point()+
-  geom_smooth(aes(group=1), colour="darkgray")+
+  geom_smooth(aes(group=date))+
   theme_classic()
 ```
-
-
 
 
 

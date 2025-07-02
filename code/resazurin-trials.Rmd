@@ -368,6 +368,7 @@ plot1<-full_data%>%
   facet_wrap(~date)+
   geom_point()+
   geom_line()+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot1
 
 ggsave(plot1, filename="figures/trials/individual_trajectories.png", width=10, height=8, units="in")
@@ -393,6 +394,7 @@ plot2<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(date, family, temperature)))+
   facet_wrap(~family)+
   geom_smooth(stat="smooth")+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2
 
 ggsave(plot2, filename="figures/trials/family_trajectories_date.png", width=12, height=12, units="in")
@@ -400,12 +402,14 @@ ggsave(plot2, filename="figures/trials/family_trajectories_date.png", width=12, 
 plot2b<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(date, family, temperature)))+
   stat_smooth(geom="smooth", method="loess", se=FALSE)+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2b
 
 plot2c<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(family, temperature)))+
   facet_wrap(~family)+
   geom_smooth(stat="smooth")+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2c
 
 ggsave(plot2c, filename="figures/trials/family_trajectories.png", width=12, height=12, units="in")
@@ -413,6 +417,7 @@ ggsave(plot2c, filename="figures/trials/family_trajectories.png", width=12, heig
 plot2d<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(family, temperature)))+
   geom_smooth(stat="smooth", method="loess", se=FALSE)+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2d
 ```
 
@@ -425,6 +430,7 @@ plot1a<-full_data%>%
   facet_wrap(~date)+
   geom_point()+
   geom_line()+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot1a
 
 ggsave(plot1a, filename="figures/trials/individual_trajectories_phenotype.png", width=8, height=8, units="in")
@@ -449,11 +455,13 @@ Plot as a model for each phenotype.
 plot2a<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(date, phenotype)))+
   stat_smooth(geom="smooth", method="loess")+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2a
 
 plot2b<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(phenotype)))+
   stat_smooth(geom="smooth", method="loess")+
+  geom_vline(xintercept = 3.5, linetype="dashed")+
   theme_classic();plot2b
 
 ggsave(plot2b, filename="figures/trials/phenotype_trajectories.png", width=12, height=12, units="in")
