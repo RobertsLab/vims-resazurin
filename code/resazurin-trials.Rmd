@@ -310,7 +310,7 @@ full_data<-full_data%>%
   rename(value=fluorescence.corr.mm)
 ```
 
-### Remove oversaturated samples 
+### Remove oversaturated samples ADJUST THIS 
 
 Remove any sample that reached > 2800 raw value at any point during the trials, these were over saturated and data is unreliable. 
 
@@ -330,7 +330,7 @@ list<-full_data%>%
   unique()
 ```
 
-Remove the 155 samples that exceeded the threshold of 2800 sometime during the trial. 
+Remove the samples that exceeded the threshold of 2800 sometime during the trial. 
 
 ```{r}
 full_data<-full_data%>%
@@ -344,13 +344,13 @@ Remove plates A and B from the data file and into their own data set to examine 
 
 ```{r}
 test_data<-full_data%>%
-  filter(plate %in% c("plate71", "plate72"))
+  filter(family %in% c("90"))
 
 full_data<-full_data%>%
   filter(!plate %in% c("plate71", "plate72"))
 ```
 
-View the test data plates. Plate A was run at 4°C and plate B was run at 21°C. 
+View the test data plates. Plate A/71 was run at 4°C and plate B/72 was run at 21°C. 
 ```{r}
 plot0<-test_data%>%
   ggplot(aes(x=timepoint, y=value, colour=temperature, group=interaction(date, family, plate, well)))+
@@ -409,6 +409,11 @@ plot2c<-full_data%>%
   theme_classic();plot2c
 
 ggsave(plot2c, filename="figures/trials/family_trajectories.png", width=12, height=12, units="in")
+
+plot2d<-full_data%>%
+  ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(family, temperature)))+
+  geom_smooth(stat="smooth", method="loess", se=FALSE)+
+  theme_classic();plot2d
 ```
 
 ## Models and Plots - by phenotype 
@@ -446,10 +451,15 @@ plot2a<-full_data%>%
   stat_smooth(geom="smooth", method="loess")+
   theme_classic();plot2a
 
-ggsave(plot2a, filename="figures/trials/phenotype_trajectories.png", width=12, height=12, units="in")
+plot2b<-full_data%>%
+  ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(phenotype)))+
+  stat_smooth(geom="smooth", method="loess")+
+  theme_classic();plot2b
+
+ggsave(plot2b, filename="figures/trials/phenotype_trajectories.png", width=12, height=12, units="in")
 ```
 
-## Calculate change in fluorescence between each timepoint 
+## Calculate change in fluorescence between each timepoint CHANGE TO PERCENT CHANGE 
 
 Convert to wide format and calculate.  
 
