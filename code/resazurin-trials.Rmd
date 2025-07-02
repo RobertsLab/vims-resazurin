@@ -358,7 +358,7 @@ Add date when we have multiple dates.
 
 ```{r}
 model<-full_data%>%
-  lmer((value)^(1/3) ~ family * timepoint + (1|well:plate) + (1|plate), data=.)
+  lmer((value)^(1/3) ~ family * timepoint + (1|well:plate:date) + (1|plate) + (1|date), data=.)
 
 anova(model)
 summary(model)
@@ -402,7 +402,7 @@ Add date when we have multiple dates.
 
 ```{r}
 model<-full_data%>%
-  lmer((value)^(1/3) ~ timepoint * phenotype + (1|well:plate) + (1|plate) + (1|family), data=.)
+  lmer((value)^(1/3) ~ timepoint * phenotype + + (1|well:plate:date) + (1|plate) + (1|date) + (1|family), data=.)
 
 anova(model)
 summary(model)
@@ -574,14 +574,14 @@ ggsave(plot9a, filename="figures/trials/total_values_phenotype.png", width=10, h
 
 ```{r}
 model<-end%>%
-  lmer((value)^(1/3) ~ family + (1|plate), data=.)
+  lmer((value)^(1/3) ~ family + (1|plate:date) + (1|date), data=.)
 
 anova(model)
 summary(model)
 qqPlot(residuals(model))
 
 model<-end%>%
-  lmer((value)^(1/3) ~ phenotype + (1|plate), data=.)
+  lmer((value)^(1/3) ~ phenotype + (1|plate:date) + (1|date), data=.)
 
 anova(model)
 summary(model)
