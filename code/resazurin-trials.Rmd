@@ -704,6 +704,15 @@ plot10a<-ggplot(aucs, aes(x = phenotype, y = AUC, colour = phenotype)) +
 ggsave(plot10a, filename="figures/trials/auc_phenotype.png", width=8, height=8, units="in")
 ```
 
+Model the data. 
+
+```{r}
+model<-lmer(AUC ~ family + (1|plate) + (1|date), data=aucs)
+
+anova(model)
+qqPlot(residuals(model))
+```
+
 ## Repeatability (Intra-class Correlation)
 
 How similar are metabolic rates among oysters within the same family, compared to between families?
