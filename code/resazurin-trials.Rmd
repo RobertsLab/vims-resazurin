@@ -45,6 +45,7 @@ library(broom)
 library(pheatmap)
 library(vegan)
 library(ggridges)
+library(ggpubr)
 ```
 
 # Resazurin Trials   
@@ -908,3 +909,226 @@ ggsave(plot15, filename="figures/trials/ridge_phenotype.png", width=10, height=8
 ```
 
 ## Correlation with traits 
+
+Load in predicted performance data provided by the breeding program. Data are recorded as percent (proportion) difference in a trait from the general population mean. For example, 0.50 indicates a 50% higher value than general population.  
+
+```{r}
+performance<-read_excel(path="data/predicted_performance.xlsx")%>%mutate(family=as.factor(family))
+
+str(performance)
+```
+
+### Correlate with total metabolic activity (AUC)
+
+Merge into the AUC data set to correlate with total metabolic rates.
+
+```{r}
+merged<-left_join(aucs, performance)
+```
+
+Correlation of survival in high salinity and total metabolic activity. 
+
+```{r}
+plot15<-merged%>%
+  group_by(family, phenotype, `survival-high-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  
+  ggplot(., aes(x = AUC, y = `survival-high-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Total Metabolic Activity (AUC)",
+    y = "Survival in High Salinity"
+  )+
+  theme_classic();plot15
+
+ggsave(plot15, filename="figures/correlations/auc_survival-high-salinity.png", width=8, height=6, units="in")
+```
+
+Correlation of survival in low salinity and total metabolic activity. 
+
+```{r}
+plot16<-merged%>%
+  group_by(family, phenotype, `survival-low-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  
+  ggplot(., aes(x = AUC, y = `survival-low-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Total Metabolic Activity (AUC)",
+    y = "Survival in Low Salinity"
+  )+
+  theme_classic();plot16
+
+ggsave(plot16, filename="figures/correlations/auc_survival-low-salinity.png", width=8, height=6, units="in")
+```
+
+Correlation of weight in high salinity and total metabolic activity. 
+
+```{r}
+plot17<-merged%>%
+  group_by(family, phenotype, `weight-high-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  
+  ggplot(., aes(x = AUC, y = `weight-high-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Total Metabolic Activity (AUC)",
+    y = "Weight in High Salinity"
+  )+
+  theme_classic();plot17
+
+ggsave(plot17, filename="figures/correlations/auc_weight-high-salinity.png", width=8, height=6, units="in")
+```
+
+Correlation of weight in low salinity and total metabolic activity. 
+```{r}
+plot18<-merged%>%
+  group_by(family, phenotype, `weight-low-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  
+  ggplot(., aes(x = AUC, y = `weight-low-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged$AUC), label.y = max(merged$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Total Metabolic Activity (AUC)",
+    y = "Weight in Low Salinity"
+  )+
+  theme_classic();plot18
+
+ggsave(plot18, filename="figures/correlations/auc_weight-low-salinity.png", width=8, height=6, units="in")
+```
+
+### Correlate with metabolic slope in response to acute stress (Delta T0-T1)
+
+```{r}
+str(deltas)
+
+merged2<-left_join(deltas, performance)
+```
+
+Correlation of survival in high salinity and total metabolic activity. 
+
+```{r}
+plot19<-merged2%>%
+  group_by(family, phenotype, `survival-high-salinity`)%>%
+  summarise(delta=mean(delta_T0_T1))%>%
+  
+  ggplot(., aes(x = delta, y = `survival-high-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Metabolic Rate - Acute Stress",
+    y = "Survival in High Salinity"
+  )+
+  theme_classic();plot19
+
+ggsave(plot19, filename="figures/correlations/stress-rate_survival-high-salinity.png", width=8, height=6, units="in")
+```
+
+Correlation of survival in low salinity and total metabolic activity. 
+
+```{r}
+plot20<-merged2%>%
+  group_by(family, phenotype, `survival-low-salinity`)%>%
+  summarise(delta=mean(delta_T0_T1))%>%
+  
+  ggplot(., aes(x = delta, y = `survival-low-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Metabolic Rate - Acute Stress",
+    y = "Survival in Low Salinity"
+  )+
+  theme_classic();plot20
+
+ggsave(plot20, filename="figures/correlations/stress-rate_survival-low-salinity.png", width=8, height=6, units="in")
+```
+
+Correlation of weight in high salinity and total metabolic activity. 
+
+```{r}
+plot21<-merged2%>%
+  group_by(family, phenotype, `weight-high-salinity`)%>%
+  summarise(delta=mean(delta_T0_T1))%>%
+  
+  ggplot(., aes(x = delta, y = `weight-high-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Metabolic Rate - Acute Stress",
+    y = "Weight in High Salinity"
+  )+
+  theme_classic();plot21
+
+ggsave(plot21, filename="figures/correlations/stress-rate_weight-high-salinity.png", width=8, height=6, units="in")
+```
+
+Correlation of weight in low salinity and total metabolic activity. 
+```{r}
+plot22<-merged2%>%
+  group_by(family, phenotype, `weight-low-salinity`)%>%
+  summarise(delta=mean(delta_T0_T1))%>%
+  
+  ggplot(., aes(x = delta, y = `weight-low-salinity`)) +
+  facet_wrap(~phenotype)+
+  geom_point(color = "steelblue", size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  stat_cor(method = "pearson", label.x = min(merged2$delta), label.y = max(merged2$`survival-high-salinity`), 
+           aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           size = 5) +  # correlation stat
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot with Pearson Correlation",
+    x = "Total Metabolic Activity (AUC)",
+    y = "Weight in Low Salinity"
+  )+
+  theme_classic();plot22
+
+ggsave(plot22, filename="figures/correlations/stress-rate_weight-low-salinity.png", width=8, height=6, units="in")
+```
+
