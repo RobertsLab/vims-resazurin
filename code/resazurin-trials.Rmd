@@ -344,13 +344,20 @@ Remove plates A and B from the data file and into their own data set to examine 
 
 ```{r}
 test_data<-full_data%>%
-  filter(plate %in% c("plateA", "plateB"))
+  filter(plate %in% c("plate71", "plate72"))
 
 full_data<-full_data%>%
-  filter(!plate %in% c("plateA", "plateB"))
+  filter(!plate %in% c("plate71", "plate72"))
 ```
 
 View the test data plates. Plate A was run at 4°C and plate B was run at 21°C. 
+```{r}
+plot0<-test_data%>%
+  ggplot(aes(x=timepoint, y=value, colour=temperature, group=interaction(date, family, plate, well)))+
+  geom_point()+
+  geom_line()+
+  theme_classic();plot0
+```
 
 ## Models and Plots - by family 
 
@@ -363,7 +370,7 @@ plot1<-full_data%>%
   geom_line()+
   theme_classic();plot1
 
-ggsave(plot1, filename="figures/trials/individual_trajectories.png", width=8, height=8, units="in")
+ggsave(plot1, filename="figures/trials/individual_trajectories.png", width=10, height=8, units="in")
 ```
 
 Run a model on metabolic rates. 
