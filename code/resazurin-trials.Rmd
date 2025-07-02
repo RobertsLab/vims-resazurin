@@ -310,20 +310,20 @@ full_data<-full_data%>%
   rename(value=fluorescence.corr.mm)
 ```
 
-### Remove oversaturated samples ADJUST THIS 
+### Remove oversaturated samples
 
-Remove any sample that reached > 2800 raw value at any point during the trials, these were over saturated and data is unreliable. 
+Remove any sample that reached > 3000 raw value at any point during the trials, these were over saturated and data is unreliable. 
 
 ```{r}
 full_data%>%
-  filter(resazurin_counts>2800)%>%
+  filter(resazurin_counts>3000)%>%
   group_by(date, plate, well)%>%
   mutate(unique=paste(date, plate, well))
 
 #there are 150 samples that went above the threshold 
 
 list<-full_data%>%
-  filter(resazurin_counts>2800)%>%
+  filter(resazurin_counts>3000)%>%
   group_by(date, plate, well)%>%
   mutate(unique=paste(date, plate, well))%>%
   pull(unique)%>%
@@ -336,6 +336,10 @@ Remove the samples that exceeded the threshold of 2800 sometime during the trial
 full_data<-full_data%>%
   mutate(unique=paste(date, plate, well))%>%
   filter(!unique %in% list)
+```
+
+```{r}
+hist(length.mm)
 ```
 
 ## Separate testing and experimental plates 
