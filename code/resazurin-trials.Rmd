@@ -316,14 +316,14 @@ Remove any sample that reached > 2800 raw value at any point during the trials, 
 
 ```{r}
 full_data%>%
-  filter(resazurin_counts>3000)%>%
+  filter(resazurin_counts>2800)%>%
   group_by(date, plate, well)%>%
   mutate(unique=paste(date, plate, well))
 
 #there are 150 samples that went above the threshold 
 
 list<-full_data%>%
-  filter(resazurin_counts>3000)%>%
+  filter(resazurin_counts>2800)%>%
   group_by(date, plate, well)%>%
   mutate(unique=paste(date, plate, well))%>%
   pull(unique)%>%
@@ -395,12 +395,20 @@ plot2<-full_data%>%
   geom_smooth(stat="smooth")+
   theme_classic();plot2
 
-ggsave(plot2, filename="figures/trials/family_trajectories.png", width=12, height=12, units="in")
+ggsave(plot2, filename="figures/trials/family_trajectories_date.png", width=12, height=12, units="in")
 
 plot2b<-full_data%>%
   ggplot(aes(x=timepoint, y=value, colour=phenotype, group=interaction(date, family, temperature)))+
   stat_smooth(geom="smooth", method="loess", se=FALSE)+
   theme_classic();plot2b
+
+plot2c<-full_data%>%
+  ggplot(aes(x=timepoint, y=value, colour=family, group=interaction(family, temperature)))+
+  facet_wrap(~family)+
+  geom_smooth(stat="smooth")+
+  theme_classic();plot2c
+
+ggsave(plot2c, filename="figures/trials/family_trajectories.png", width=12, height=12, units="in")
 ```
 
 ## Models and Plots - by phenotype 

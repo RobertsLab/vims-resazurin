@@ -51,7 +51,7 @@ temps%>%
   ggplot(aes(x=timepoint, y=temperature))+
   facet_wrap(~date)+
   geom_point()+
-  geom_line()+
+  geom_smooth(aes(group=1), colour="darkgray")+
   theme_classic()
 ```
 
