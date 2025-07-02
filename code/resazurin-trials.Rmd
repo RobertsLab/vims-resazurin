@@ -320,7 +320,7 @@ full_data%>%
   group_by(date, plate, well)%>%
   mutate(unique=paste(date, plate, well))
 
-#there are 150 samples that went above the threshold
+#there are 150 samples that went above the threshold 
 
 list<-full_data%>%
   filter(resazurin_counts>3000)%>%
@@ -337,6 +337,20 @@ full_data<-full_data%>%
   mutate(unique=paste(date, plate, well))%>%
   filter(!unique %in% list)
 ```
+
+## Separate testing and experimental plates 
+
+Remove plates A and B from the data file and into their own data set to examine separately. 
+
+```{r}
+test_data<-full_data%>%
+  filter(plate %in% c("plateA", "plateB"))
+
+full_data<-full_data%>%
+  filter(!plate %in% c("plateA", "plateB"))
+```
+
+View the test data plates. Plate A was run at 4°C and plate B was run at 21°C. 
 
 ## Models and Plots - by family 
 
