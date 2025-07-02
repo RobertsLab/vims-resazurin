@@ -403,7 +403,7 @@ summary(model)
 qqPlot(residuals(model))
 ```
 
-Plot as a model for each family at each temperature. 
+Plot for each family. 
 
 ```{r}
 plot2<-full_data%>%
