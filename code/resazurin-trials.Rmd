@@ -747,6 +747,8 @@ summary(model)
 qqPlot(residuals(model))
 ```
 
+Add model prediction plots here.  
+
 ## Area under the curve 
 
 Area under the curve (AUC): Summarizes total metabolic activity per oyster.
