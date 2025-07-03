@@ -50,6 +50,14 @@ temps%>%
   theme_classic()
 ```
 
+Calculate averages
+
+```{r}
+temps%>%
+  group_by(date, timepoint)%>%
+  summarise(mean=mean(temperature))
+```
+
 
 
 

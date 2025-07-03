@@ -46,6 +46,7 @@ library(pheatmap)
 library(vegan)
 library(ggridges)
 library(ggpubr)
+library(broom.mixed)
 ```
 
 # Resazurin Trials   
@@ -371,9 +372,7 @@ plot0<-test_data%>%
 Set order of families for analysis. 
 
 ```{r}
-levels_list<-c(2, 5, 6, 7, 12, 14, 15, 16, 19, 20, 21, 24, 25, 26, 31, 32, 33, 34, 36,
-              37, 38, 39, 41, 42, 43, 47, 48, 49, 50, 51, 54, 55, 57, 60, 61, 70, 71,
-              72, 74, 76, 77, 78, 79, 80, 82, 83, 84, 85, 88, 90)
+levels_list<-c(2, 5, 6, 7, 12, 14, 15, 16, 19, 20, 21, 24, 25, 26, 31, 32, 33, 34, 36, 37, 38, 39, 41, 42, 43, 47, 48, 49, 50, 51, 54, 55, 57, 60, 61, 70, 71, 72, 74, 76, 77, 78, 79, 80, 82, 83, 84, 85, 88, 90)
 
 full_data<-full_data%>%
   mutate(family=factor(family, levels=levels_list))
@@ -403,7 +402,7 @@ summary(model)
 qqPlot(residuals(model))
 ```
 
-Plot for each family. 
+Plot raw data for each family. 
 
 ```{r}
 plot2<-full_data%>%
@@ -437,6 +436,52 @@ plot2d<-full_data%>%
   theme_classic();plot2d
 
 ggsave(plot2d, filename="figures/trials/family_trajectories2.png", width=8, height=8, units="in")
+```
+
+Plot model estimates for metabolic rates for each family. 
+
+```{r}
+#predict data 
+pred_data <- augment(model, full_data) %>%
+  mutate(predicted_value_family = (.fitted)^3)  # back-transform to original scale
+
+#plot
+plot2e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_family, color = family, group = family, fill = family)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "ribbon",
+    alpha = 0.2,
+    color = NA
+  ) +
+  labs(
+    title = "Model Predicted Metabolic Rate",
+    x = "Timepoint",
+    y = "Fluorescence"
+  ) +
+  theme_classic() +
+  guides(fill = "none");plot2e  
+
+ggsave(plot2e, filename="figures/trials/family_model_predictions.png", width=9, height=8, units="in")
+
+plot2f<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_family, color = family, group = family, fill = family)) +
+  facet_wrap(~family, nrow=10, ncol=5)+
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "ribbon",
+    alpha = 0.2,
+    color = NA
+  ) +
+  labs(
+    title = "Model Predicted Metabolic Rate",
+    x = "Timepoint",
+    y = "Fluorescence"
+  ) +
+  theme_classic() +
+  guides(fill = "none");plot2f 
+
+ggsave(plot2f, filename="figures/trials/family_model_predictions_panel.png", width=12, height=10, units="in")
 ```
 
 ## Models and Plots - by phenotype 
@@ -479,6 +524,33 @@ plot2b<-full_data%>%
   theme_classic();plot2b
 
 ggsave(plot2b, filename="figures/trials/phenotype_trajectories.png", width=8, height=8, units="in")
+```
+
+Plot model estimates for metabolic rates for each family. 
+
+```{r}
+#predict data 
+pred_data <- augment(model, full_data) %>%
+  mutate(predicted_value_phenotype = (.fitted)^3)  # back-transform to original scale
+
+#plot
+plot3e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_phenotype, color = phenotype, group = phenotype, fill = phenotype)) +
+  stat_summary(fun = mean, geom = "line", size = 1) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "ribbon",
+    alpha = 0.2,
+    color = NA
+  ) +
+  labs(
+    title = "Model Predicted Metabolic Rate",
+    x = "Timepoint",
+    y = "Fluorescence"
+  ) +
+  theme_classic() +
+  guides(fill = "none");plot3e  
+
+ggsave(plot3e, filename="figures/trials/phenotype_model_predictions.png", width=9, height=8, units="in")
 ```
 
 ## Calculate change in fluorescence between each timepoint 
