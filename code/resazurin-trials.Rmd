@@ -455,7 +455,7 @@ plot2e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_family, color =
     color = NA
   ) +
   labs(
-    title = "Model Predicted Metabolic Rate",
+    title = "Modeled Metabolic Rate",
     x = "Timepoint",
     y = "Fluorescence"
   ) +
@@ -543,7 +543,7 @@ plot3e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_phenotype, colo
     color = NA
   ) +
   labs(
-    title = "Model Predicted Metabolic Rate",
+    title = "Modeled Metabolic Rate",
     x = "Timepoint",
     y = "Fluorescence"
   ) +
@@ -802,7 +802,7 @@ repeat_model <- rpt(value ~ timepoint + (1|family), grname = "family", data = fu
 summary(repeat_model)
 ```
 
-Repeatability (R) value is 0.135 here - most variation is within families with little family structure 
+Repeatability (R) value is 0.111 here - most variation is within families with little family structure 
 
 ## Heritability estimates  
 
@@ -830,7 +830,7 @@ heritability <- (MS_family - MS_resid) / (MS_family + (k - 1) * MS_resid)  # k =
 heritability
 ```
 
-Heritability = 0.0074 (low heritability, matching family variation above).  
+Heritability = 0.0056 (low heritability, matching family variation above).  
 
 ## Fit nonlinear curves 
 
