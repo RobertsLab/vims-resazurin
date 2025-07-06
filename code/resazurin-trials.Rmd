@@ -767,7 +767,17 @@ plot10<-ggplot(aucs, aes(x = family, y = AUC, colour = phenotype)) +
   labs(title = "AUC by Family", x = "Family", y = "AUC") +
   theme_classic();plot10
 
-ggsave(plot10, filename="figures/trials/auc_family.png", width=10, height=8, units="in")
+plot10a<-aucs%>%
+  group_by(family, phenotype)%>%
+  summarise(mean=mean(AUC, na.rm=TRUE), se=(sd(AUC, na.rm=TRUE))/sqrt(length(AUC)))%>%
+  
+  ggplot(aes(x = reorder(family, mean), y = mean, colour = phenotype)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se))+
+  labs(title = "Total metabolic activity (AUC)", x = "Family", y = "AUC") +
+  theme_classic();plot10a
+
+ggsave(plot10a, filename="figures/trials/auc_family.png", width=10, height=8, units="in")
 
 plot10a<-ggplot(aucs, aes(x = phenotype, y = AUC, colour = phenotype)) +
   geom_violin(trim = FALSE) +
@@ -775,7 +785,18 @@ plot10a<-ggplot(aucs, aes(x = phenotype, y = AUC, colour = phenotype)) +
   labs(title = "AUC by Phenotype", x = "Family", y = "AUC") +
   theme_classic(); plot10a
 
-ggsave(plot10a, filename="figures/trials/auc_phenotype.png", width=8, height=8, units="in")
+plot10b<-aucs%>%
+  group_by(phenotype)%>%
+  summarise(mean=mean(AUC, na.rm=TRUE), se=(sd(AUC, na.rm=TRUE))/sqrt(length(AUC)))%>%
+  
+  ggplot(aes(x = reorder(phenotype, mean), y = mean, colour = phenotype)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.1)+
+  labs(title = "Total metabolic activity (AUC)", x = "Family", y = "AUC") +
+  ylim(6, 10)+
+  theme_classic();plot10b
+
+ggsave(plot10b, filename="figures/trials/auc_phenotype.png", width=6, height=6, units="in")
 ```
 
 Model the data. 
