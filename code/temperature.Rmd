@@ -43,19 +43,25 @@ library(tools)
 ```{r}
 temps<-read_excel(path="data/temperature.xlsx")%>%mutate(date=as.character(date))
 
-temps%>%
-  ggplot(aes(x=timepoint, y=temperature, colour=date))+
+temp_plot<-temps%>%
+  ggplot(aes(x=timepoint, y=temperature))+
   geom_point()+
-  geom_smooth(aes(group=date))+
-  theme_classic()
+  geom_smooth(aes(group=1), colour="black")+
+  theme_classic()+
+  geom_vline(xintercept=3.5, linetype="dashed")+
+  ylab("Water Temperature (°C)")+
+  ggtitle("B")+
+  xlab("Time Point");temp_plot
+
+ggsave(temp_plot, filename="figures/temperature/temperature_plot_wells.png", width=4, height=4)
 ```
 
 Calculate averages
 
 ```{r}
 temps%>%
-  group_by(date, timepoint)%>%
-  summarise(mean=mean(temperature))
+  group_by(timepoint)%>%
+  summarise(mean=mean(temperature), se=sd(temperature)/sqrt(length(temperature)))
 ```
 
 
