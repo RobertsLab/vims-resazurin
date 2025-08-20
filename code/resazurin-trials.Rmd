@@ -332,7 +332,7 @@ list<-full_data%>%
   unique()
 ```
 
-Remove the samples that exceeded the threshold of 2800 sometime during the trial. 
+Remove the samples that exceeded the threshold of 3000 sometime during the trial. 
 
 ```{r}
 full_data<-full_data%>%
@@ -343,6 +343,7 @@ full_data<-full_data%>%
 Ideal size range is in the middle range of what we used for these trials (~ >10mm and less that 18mm) 
 ```{r}
 hist(full_data$length.mm)
+range(full_data$length.mm)
 ```
 
 ## Separate testing and experimental plates 
@@ -456,14 +457,15 @@ plot2e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_family, color =
     color = NA
   ) +
   labs(
-    title = "Modeled Metabolic Rate",
-    x = "Timepoint",
-    y = "Fluorescence"
+    title = "A",
+    x = "Hours",
+    y = expression(paste("Fold Change in Fluorescence (mm" ^-1, ")"))
   ) +
   theme_classic() +
+  theme(legend.position="none")+
   guides(fill = "none");plot2e  
 
-ggsave(plot2e, filename="figures/trials/family_model_predictions.png", width=9, height=8, units="in")
+ggsave(plot2e, filename="figures/trials/family_model_predictions.png", width=5, height=5, units="in")
 
 plot2f<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_family, color = family, group = family, fill = family)) +
   facet_wrap(~family, nrow=10, ncol=5)+
@@ -536,6 +538,8 @@ pred_data <- augment(model, full_data) %>%
 
 #plot
 plot3e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_phenotype, color = phenotype, group = phenotype, fill = phenotype)) +
+  scale_fill_manual(values=c("darkorange", "purple2"), name="")+
+  scale_colour_manual(values=c("darkorange", "purple2"), name="")+
   stat_summary(fun = mean, geom = "line", size = 1) +
   stat_summary(
     fun.data = mean_se,
@@ -544,14 +548,14 @@ plot3e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_phenotype, colo
     color = NA
   ) +
   labs(
-    title = "Modeled Metabolic Rate",
-    x = "Timepoint",
-    y = "Fluorescence"
+    title = "B",
+    x = "Hours",
+    y = expression(paste("Fold Change in Fluorescence (mm" ^-1, ")"))
   ) +
   theme_classic() +
   guides(fill = "none");plot3e  
 
-ggsave(plot3e, filename="figures/trials/phenotype_model_predictions.png", width=9, height=8, units="in")
+ggsave(plot3e, filename="figures/trials/phenotype_model_predictions.png", width=5, height=5, units="in")
 ```
 
 ## Calculate change in fluorescence between each timepoint 
@@ -774,11 +778,13 @@ plot10a<-aucs%>%
   
   ggplot(aes(x = reorder(family, mean), y = mean, colour = phenotype)) +
   geom_point()+
+  scale_fill_manual(values=c("darkorange", "purple2"), name="")+
+  scale_colour_manual(values=c("darkorange", "purple2"), name="")+
   geom_errorbar(aes(ymin=mean-se, ymax=mean+se))+
-  labs(title = "Total metabolic activity (AUC)", x = "Family", y = "AUC") +
+  labs(title = "C", x = "Family", y = "AUC") +
   theme_classic();plot10a
 
-ggsave(plot10a, filename="figures/trials/auc_family.png", width=10, height=8, units="in")
+ggsave(plot10a, filename="figures/trials/auc_family.png", width=10, height=5, units="in")
 
 plot10a<-ggplot(aucs, aes(x = phenotype, y = AUC, colour = phenotype)) +
   geom_violin(trim = FALSE) +
@@ -792,18 +798,29 @@ plot10b<-aucs%>%
   
   ggplot(aes(x = reorder(phenotype, mean), y = mean, colour = phenotype)) +
   geom_point()+
+  scale_fill_manual(values=c("darkorange", "purple2"), name="")+
+  scale_colour_manual(values=c("darkorange", "purple2"), name="")+
   geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.1)+
-  labs(title = "Total metabolic activity (AUC)", x = "Family", y = "AUC") +
+  labs(title = "D", x = "Phenotype", y = "AUC") +
   ylim(6, 10)+
-  theme_classic();plot10b
+  theme_classic()+
+  theme(legend.position="none");plot10b
 
-ggsave(plot10b, filename="figures/trials/auc_phenotype.png", width=6, height=6, units="in")
+ggsave(plot10b, filename="figures/trials/auc_phenotype.png", width=3, height=5, units="in")
 ```
 
 Model the data. 
 
 ```{r}
-model<-lmer(AUC ~ family + (1|plate) + (1|date), data=aucs)
+model<-lmer(sqrt(AUC) ~ family + (1|plate) + (1|date), data=aucs)
+
+anova(model)
+qqPlot(residuals(model))
+```
+
+
+```{r}
+model<-lmer(sqrt(AUC) ~ phenotype + (1|plate) + (1|date), data=aucs)
 
 anova(model)
 qqPlot(residuals(model))
@@ -1059,14 +1076,16 @@ plot16<-merged%>%
   group_by(family, phenotype, `survival-low-salinity`)%>%
   summarise(AUC=mean(AUC))%>%
   
-  ggplot(., aes(x = AUC, y = `survival-low-salinity`)) +
-  facet_wrap(~phenotype)+
-  geom_point(color = "steelblue", size = 2) +  # scatter points
-  geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
+  ggplot(., aes(x = AUC, y = `survival-low-salinity`, colour=phenotype, fill=phenotype)) +
+  facet_wrap(~phenotype, scales="free_x")+
+  scale_colour_manual(values=c("darkorange", "purple2"), name="Selected \nPhenotype")+
+  scale_fill_manual(values=c("darkorange", "purple2"), name="Selected \nPhenotype")+
+  geom_point(size = 2) +  # scatter points
+  geom_smooth(method = "lm", se = TRUE, linetype = "solid") +  # regression line
   labs(
-    title = "Scatter Plot with Pearson Correlation",
+    title = "",
     x = "Total Metabolic Activity (AUC)",
-    y = "Survival in Low Salinity"
+    y = "Predicted Survival in Low Salinity Environments"
   )+
   theme_classic();plot16
 
