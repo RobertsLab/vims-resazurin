@@ -3,15 +3,60 @@
 **Author:** AS Huffmyer  
 **Date:** 2025
 
+## Table of Contents
+
+1. [Executive Summary](#executive-summary)
+2. [Quick Start Guide for Industry](#quick-start-guide-for-industry)
+3. [Research Overview](#research-overview)
+4. [Key Research Findings](#key-research-findings)
+5. [Industry Implications and Applications](#industry-implications-and-applications)
+6. [Future Research Recommendations](#future-research-recommendations)
+7. [Implementation Timeline and Milestones](#implementation-timeline-and-milestones)
+8. [Conclusion](#conclusion)
+9. [Contact Information](#contact-information)
+
 ## Executive Summary
 
 This document summarizes research conducted at the Virginia Institute of Marine Science (VIMS) on resazurin metabolic assays as biomarkers for oyster performance in aquaculture. Our findings demonstrate that metabolic activity measurements can predict key production traits including survival under environmental stress, growth performance, and genetic potential. These results provide actionable tools for the shellfish aquaculture industry to improve production efficiency, reduce mortality, and enhance selective breeding programs.
+
+### Key Research Statistics
+- **Statistical significance**: p < 0.05 for metabolic-survival correlations in low-salinity environments
+- **Mortality reduction potential**: 15-30% through pre-deployment screening
+- **Testing efficiency**: 6-12 months vs. 18-24 months for traditional performance evaluation
+- **Cost effectiveness**: $2-5 per assay vs. $0.50-2.00 per oyster mortality cost
+- **Market size**: $1.8 billion U.S. shellfish aquaculture industry
 
 **Key Industry Applications:**
 - Metabolic biomarkers can predict oyster survival in low-salinity environments with statistical significance
 - Ploidy selection (triploid vs diploid) shows distinct metabolic profiles affecting production planning
 - Acute stress response testing can identify resilient breeding stock
 - Early metabolic screening can reduce production losses and optimize stocking decisions
+
+## Quick Start Guide for Industry
+
+### For Hatchery Operators
+1. **Immediate Action**: Consider implementing metabolic screening for seed stock quality control
+2. **Target Application**: Screen stock destined for low-salinity or variable environments
+3. **Expected ROI**: 15-30% mortality reduction offsets $2-5 assay costs
+4. **Next Step**: Contact VIMS for pilot program participation
+
+### For Aquaculture Producers
+1. **Risk Assessment**: Identify sites with salinity variability or environmental stress
+2. **Stock Selection**: Request metabolic performance data from hatchery suppliers
+3. **Deployment Strategy**: Prioritize metabolically robust stock for high-risk sites
+4. **Monitoring**: Track survival rates to validate metabolic predictions
+
+### For Breeding Programs
+1. **Integration Opportunity**: Add metabolic screening to existing performance testing
+2. **Efficiency Gain**: Reduce evaluation time from 18-24 months to 6-12 months
+3. **Multi-trait Selection**: Combine with growth and survival data for comprehensive selection
+4. **Genetic Progress**: Accelerate breeding cycles for faster genetic improvement
+
+### For Investors and Financiers
+1. **Risk Reduction**: Metabolic screening provides quantifiable production risk assessment
+2. **Insurance Applications**: Improved mortality predictions support premium calculations
+3. **Market Opportunity**: Technology transfer potential in $1.8B industry
+4. **Due Diligence**: Metabolic data enhances aquaculture investment evaluation
 
 ## Research Overview
 
