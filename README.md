@@ -74,25 +74,3 @@ Required R packages:
 install.packages(c("tidyverse", "ggplot2", "readxl", "cowplot", 
                    "lme4", "lmerTest", "car", "emmeans", "pracma"))
 ```
-
-## Citation
-
-If you use this research, please cite:
-[Citation to be added upon publication]
-
-## Contact
-
-**Dr. AS Huffmyer**  
-Virginia Institute of Marine Science  
-[Contact information]
-
-For technology transfer and commercial applications:
-[Technology transfer office contact]
-
-## License
-
-[License information to be added]
-
-## Acknowledgments
-
-This research was supported by [funding sources]. We thank our collaborators and commercial partners for their contributions to this work.
