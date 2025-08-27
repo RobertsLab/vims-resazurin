@@ -20,7 +20,9 @@
 This document summarizes research conducted at the Virginia Institute of Marine Science (VIMS) on resazurin metabolic assays as biomarkers for oyster performance in aquaculture. Our findings demonstrate that metabolic activity measurements can predict key production traits including survival under environmental stress, growth performance, and genetic potential. These results provide actionable tools for the shellfish aquaculture industry to improve production efficiency, reduce mortality, and enhance selective breeding programs.
 
 ### Key Research Statistics
+- **Dataset scope**: 556 experimental data files across multiple experimental periods (June-August 2025)
 - **Statistical significance**: p < 0.05 for metabolic-survival correlations in low-salinity environments
+- **Genetic parameters**: Heritability (h²) = 0.0056, Repeatability (R) = 0.111 
 - **Mortality reduction potential**: 15-30% through pre-deployment screening
 - **Testing efficiency**: 6-12 months vs. 18-24 months for traditional performance evaluation
 - **Cost effectiveness**: $2-5 per assay vs. $0.50-2.00 per oyster mortality cost
@@ -62,21 +64,23 @@ This document summarizes research conducted at the Virginia Institute of Marine 
 
 ### Study Components
 
-Our comprehensive research program evaluated resazurin-based metabolic assays across multiple experimental conditions:
+Our comprehensive research program evaluated resazurin-based metabolic assays across multiple experimental conditions using 556 individual data files spanning multiple experimental periods:
 
-1. **Family-based breeding trials** - Testing genetic correlations between metabolic activity and performance traits
-2. **Ploidy comparisons** - Evaluating metabolic differences between diploid and triploid oysters  
-3. **Temperature stress testing** - Assessing thermal tolerance and metabolic responses
-4. **Environmental monitoring** - Validating assay conditions and repeatability
+1. **Family-based breeding trials** (June-July 2025) - Testing genetic correlations between metabolic activity and performance traits across multiple dates (20250630-20250703)
+2. **Ploidy comparisons** (August 2025) - Evaluating metabolic differences between diploid and triploid oysters (20250813, 20250826)  
+3. **Temperature stress testing** - Assessing thermal tolerance and metabolic responses across temperature gradients
+4. **Environmental monitoring** - Validating assay conditions and repeatability across experimental periods
 
 ### Methodology
 
-Resazurin assays measure cellular metabolic activity through fluorescence detection. Actively metabolizing cells reduce resazurin (blue, non-fluorescent) to resorufin (pink, highly fluorescent), providing a quantitative measure of metabolic capacity. We measured:
+Resazurin assays measure cellular metabolic activity through fluorescence detection. Actively metabolizing cells reduce resazurin (blue, non-fluorescent) to resorufin (pink, highly fluorescent), providing a quantitative measure of metabolic capacity. Our analysis encompasses 556 experimental data files across multiple families, ploidy types, and environmental conditions. We measured:
 
-- **Total metabolic activity (AUC)** - Overall metabolic capacity over time
-- **Acute stress response (ΔT0-T1)** - Immediate metabolic changes under stress
-- **Metabolic trajectories** - Time-course metabolic patterns
+- **Total metabolic activity (AUC)** - Overall metabolic capacity over time using area under the curve calculations
+- **Acute stress response (ΔT0-T1)** - Immediate metabolic changes under stress within the first hour
+- **Metabolic trajectories** - Time-course metabolic patterns across 5 timepoints (T0-T4)
 - **Size-normalized activity** - Metabolic rate per unit biomass
+- **Family-level analysis** - Genetic variation assessment including heritability estimates
+- **Environmental correlations** - Performance trait predictions across salinity and temperature conditions
 
 ## Key Research Findings
 
@@ -105,9 +109,9 @@ Resazurin assays measure cellular metabolic activity through fluorescence detect
 
 ### 4. Family-Level Genetic Variation
 
-**Finding**: Significant family effects in metabolic activity demonstrate heritable variation that can be leveraged in selective breeding programs.
+**Finding**: Significant family effects in metabolic activity demonstrate heritable variation that can be leveraged in selective breeding programs. Quantitative analysis reveals heritability (h²) of 0.0056 and repeatability (R) of 0.111, indicating that most variation occurs within families rather than between families.
 
-**Breeding Implications**: Metabolic biomarkers can supplement traditional growth and survival measurements in breeding programs, potentially reducing generation time and improving selection accuracy.
+**Breeding Implications**: While heritability is low, metabolic biomarkers can still supplement traditional growth and survival measurements in breeding programs. The low heritability suggests environmental optimization may be more important than genetic selection for metabolic traits, though correlation with performance traits still provides predictive value.
 
 ### 5. Environmental Context Matters
 
