@@ -1,5 +1,5 @@
 ---
-title: VIMS resazurin ploidy trials  
+title: VIMS resazurin ploidy trials - first round 20250813
 author: "AS Huffmyer"
 date: '2025'
 output:
@@ -54,7 +54,7 @@ library(broom.mixed)
 
 ```{r}
 # Set the folder path
-folder_path <- "data/ploidy/plate-files/"  
+folder_path <- "data/ploidy/plate-files/20250813"  
 
 # List all txt files in the folder
 file_list <- list.files(path = folder_path, pattern = "\\.xlsx$", full.names = TRUE, recursive=TRUE)
@@ -127,7 +127,7 @@ head(combined_data)
 Load in metadata. 
 
 ```{r}
-metadata<-read_xlsx(path="data/ploidy/metadata/ploidy_metadata.xlsx")%>%
+metadata<-read_xlsx(path="data/ploidy/metadata/ploidy_metadata_20250813.xlsx")%>%
   mutate(date=as.character(date))
 ```
 
@@ -146,7 +146,7 @@ head(full_data)
 Load in size data. 
 
 ```{r}
-size<-read_xlsx("data/ploidy/size-images/ploidy_size.xlsx")%>%
+size<-read_xlsx("data/ploidy/size-images/ploidy_size_20250813.xlsx")%>%
   mutate(date=as.character(date))%>%
   select(!length.in)
 ```
@@ -368,8 +368,6 @@ plot1<-full_data%>%
   geom_line()+
   geom_vline(xintercept = 3, linetype="dashed")+
   theme_classic();plot1
-
-ggsave(plot1, filename="figures/ploidy/individual_trajectories.png", width=10, height=8, units="in")
 ```
 
 Run a model on metabolic rates. 
@@ -392,8 +390,6 @@ plot2<-full_data%>%
   geom_smooth(stat="smooth")+
   geom_vline(xintercept = 3, linetype="dashed")+
   theme_classic();plot2
-
-ggsave(plot2, filename="figures/ploidy/ploidy_trajectories.png", width=4, height=4, units="in")
 ```
 
 Plot model estimates for metabolic rates for each ploidy 
@@ -419,8 +415,6 @@ plot2e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_ploidy, color =
   ) +
   theme_classic() +
   guides(fill = "none");plot2e  
-
-ggsave(plot2e, filename="figures/ploidy/ploidy_model_predictions.png", width=5, height=5, units="in")
 ```
 
 ## Area under the curve 
@@ -451,8 +445,6 @@ plot10a<-aucs%>%
   labs(title = "Total metabolic activity (AUC)", x = "Ploidy", y = "AUC") +
   ylim(1,10)+
   theme_classic();plot10a
-
-ggsave(plot10a, filename="figures/ploidy/auc_ploidy.png", width=5, height=5, units="in")
 ```
 
 Model the data. 
