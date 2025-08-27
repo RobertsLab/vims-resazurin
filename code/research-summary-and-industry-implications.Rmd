@@ -271,25 +271,4 @@ The technology offers particular value for:
 - **Breeding programs**: Accelerated genetic improvement
 - **Industry**: Overall resilience and sustainability enhancement
 
-With continued research and development, metabolic biomarkers can play a central role in addressing the growing demand for sustainable seafood while improving the economic viability of shellfish aquaculture operations.
 
-The proposed research program will establish the United States as a global leader in precision aquaculture technology while directly supporting the $1.8 billion U.S. shellfish aquaculture industry's growth and resilience goals.
-
-# Acknowledgments
-
-This research was conducted at the Virginia Institute of Marine Science with support from [funding sources]. We thank [collaborators] for their contributions to data collection and analysis. Special recognition to the commercial aquaculture partners who provided materials and expertise essential to this research.
-
-# References
-
-[References to be added based on final publication standards]
-
-# Contact Information
-
-For questions about this research or potential collaborations:
-
-**Dr. AS Huffmyer**  
-Virginia Institute of Marine Science  
-[Contact details]
-
-**Technology Transfer Office**  
-[Contact details for commercial applications]
