@@ -12,6 +12,25 @@ library(plotly)
 library(pracma)
 library(stringr)
 
+#-------------------------------------------------
+# Locate project root (data/ lives at project root)
+# Works whether working dir is project root or app dir
+#-------------------------------------------------
+find_root_dir <- function(){
+  candidates <- c("../../", "../", "./")
+  for (cand in candidates){
+    test_path <- file.path(cand, "data", "trial_metadata.xlsx")
+    if (file.exists(test_path)){
+      return(normalizePath(cand))
+    }
+  }
+  # Fallback to current directory
+  normalizePath(".")
+}
+
+PROJECT_ROOT <- find_root_dir()
+DATA_DIR <- file.path(PROJECT_ROOT, "data")
+
 #-----------------------------
 # Helper functions
 #-----------------------------
@@ -29,7 +48,8 @@ read_plate_file <- function(file_path){
       well = paste0(Row, Column),
   plate = str_extract(file_name, "plate\\d+"),
   date = str_extract(file_name, "^\\d{8}"),
-  timepoint = str_extract(file_name, "T\\d+") %>% str_remove("T") %>% as.numeric()
+  timepoint = str_extract(file_name, "T\\d+") %>% str_remove("T") %>% as.numeric(),
+  file_name = file_name
     ) %>%
     select(date, plate, well, timepoint, resazurin_counts = Value, file_name)
   dat_long
@@ -99,8 +119,11 @@ tu <- tagList(
              sidebarLayout(
                sidebarPanel(width = 3,
                             fileInput("plate_files", "Plate Reader Files (.xlsx)", multiple = TRUE, accept = c('.xlsx')),
+                             checkboxInput("use_repo_plate", "Use repo plate files (example dataset)", TRUE),
                             fileInput("metadata_file", "Metadata File", accept = c('.xlsx')),
                             fileInput("size_file", "Size File", accept = c('.xlsx')),
+                            checkboxInput("use_repo_meta", "Use repo metadata (data/trial_metadata.xlsx)", TRUE),
+                            checkboxInput("use_repo_size", "Use repo size (data/size/trial_size.xlsx)", TRUE),
                             checkboxInput("exclude_20250630", "Exclude 20250630", TRUE),
                             numericInput("oversat", "Oversaturation Threshold", 3000, min = 1000, step = 100),
                             actionButton("process", "Process Data", class = "btn-primary")
@@ -112,6 +135,7 @@ tu <- tagList(
                    tabPanel("AUC", DTOutput("auc_table")),
                    tabPanel("Deltas", DTOutput("deltas_table"))
                  )
+                 , verbatimTextOutput("process_log")
                )
              )
     ),
@@ -151,23 +175,64 @@ tu <- tagList(
 #-----------------------------
 
 sv <- function(input, output, session){
+  log_msg <- reactiveVal("")
+  append_log <- function(txt){
+    isolate(log_msg(paste0(log_msg(), "\n", format(Sys.time(), "%H:%M:%S"), " - ", txt)))
+  }
+
   raw_data <- eventReactive(input$process, {
-    req(input$plate_files)
-    df <- process_uploaded_files(input$plate_files)
-    if(input$exclude_20250630){
-      df <- df %>% filter(date != '20250630')
+    if(isTRUE(input$use_repo_plate)){
+      append_log(paste0("Root detected: ", PROJECT_ROOT))
+      plate_dir <- file.path(DATA_DIR, "plate-files")
+      plate_paths <- list.files(plate_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+      append_log(paste("Found", length(plate_paths), "xlsx plate files"))
+      if(length(plate_paths)==0) validate(paste0("No example plate files found in ", plate_dir))
+      # mimic original exclusion of 20250630 after list creation if checkbox chosen separately
+      df_list <- lapply(plate_paths, function(p){
+        tryCatch(read_plate_file(p), error = function(e){append_log(paste("Failed:", p, e$message)); NULL})
+      })
+      df <- bind_rows(df_list)
+    } else {
+      req(input$plate_files)
+      df <- process_uploaded_files(input$plate_files)
     }
+    # Ensure date is character and safely filter 20250630
+    if("date" %in% names(df)) df <- df %>% mutate(date = as.character(date))
+    if(input$exclude_20250630 && "date" %in% names(df)){
+      before_n <- nrow(df)
+      df <- df %>% filter(!is.na(date) & date != '20250630')
+      append_log(paste("Excluded 20250630 rows:", before_n - nrow(df)))
+    }
+     append_log(paste("Loaded", nrow(df), "rows from plate files"))
     df
   })
 
   metadata <- reactive({
-    req(input$metadata_file)
-    read_excel(input$metadata_file$datapath) %>% mutate(date = as.character(date))
+    if(isTRUE(input$use_repo_meta)){
+      path <- file.path(DATA_DIR,"trial_metadata.xlsx")
+      validate(need(file.exists(path), "Repo metadata file not found"))
+      md <- read_excel(path)
+      append_log("Loaded metadata from repo file")
+    } else {
+      req(input$metadata_file)
+      md <- read_excel(input$metadata_file$datapath)
+      append_log("Loaded metadata from upload")
+    }
+    md %>% mutate(date = as.character(date))
   })
 
   size_df <- reactive({
-    req(input$size_file)
-    read_excel(input$size_file$datapath) %>% mutate(date = as.character(date))
+    if(isTRUE(input$use_repo_size)){
+      path <- file.path(DATA_DIR,"size","trial_size.xlsx")
+      validate(need(file.exists(path), "Repo size file not found"))
+      sd <- read_excel(path)
+      append_log("Loaded size from repo file")
+    } else {
+      req(input$size_file)
+      sd <- read_excel(input$size_file$datapath)
+      append_log("Loaded size from upload")
+    }
+    sd %>% mutate(date = as.character(date))
   })
 
   processed <- reactive({
@@ -177,6 +242,7 @@ sv <- function(input, output, session){
     merged <- raw_data() %>% mutate(date = as.character(date)) %>% merge_with_metadata(md) %>% merge_with_size(sd)
     norm <- normalize_and_blank_correct(merged)
     filtered <- filter_oversaturated(norm, threshold = input$oversat)
+  append_log(paste("Processed rows:", nrow(filtered)))
     filtered
   })
 
@@ -205,6 +271,8 @@ sv <- function(input, output, session){
   output$deltas_table <- renderDT({
     datatable(deltas(), options = list(pageLength = 10, scrollX = TRUE))
   })
+
+  output$process_log <- renderText({ log_msg() })
 
   output$trajectory_plot <- renderPlotly({
     df <- processed()
