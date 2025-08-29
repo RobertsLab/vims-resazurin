@@ -111,32 +111,13 @@ compute_deltas <- function(df){
 # UI
 #-----------------------------
 
-tu <- tagList(
-  theme = shinytheme("flatly"),
-  navbarPage(
-    title = "Resazurin Trials Explorer",
-    tabPanel("Upload & Data",
-             sidebarLayout(
-               sidebarPanel(width = 3,
-                            fileInput("plate_files", "Plate Reader Files (.xlsx)", multiple = TRUE, accept = c('.xlsx')),
-                             checkboxInput("use_repo_plate", "Use repo plate files (example dataset)", TRUE),
-                            fileInput("metadata_file", "Metadata File", accept = c('.xlsx')),
-                            fileInput("size_file", "Size File", accept = c('.xlsx')),
-                            checkboxInput("use_repo_meta", "Use repo metadata (data/trial_metadata.xlsx)", TRUE),
-                            checkboxInput("use_repo_size", "Use repo size (data/size/trial_size.xlsx)", TRUE),
-                            checkboxInput("exclude_20250630", "Exclude 20250630", TRUE),
-                            numericInput("oversat", "Oversaturation Threshold", 3000, min = 1000, step = 100),
-                            actionButton("process", "Process Data", class = "btn-primary")
-               ),
-               mainPanel(
-                 tabsetPanel(
-                   tabPanel("Preview", DTOutput("raw_preview")),
-                   tabPanel("Processed", DTOutput("processed_preview")),
-                   tabPanel("AUC", DTOutput("auc_table")),
-                   tabPanel("Deltas", DTOutput("deltas_table"))
-                 )
-                 , verbatimTextOutput("process_log")
-               )
+tu <- navbarPage(title = "Resazurin Trials Explorer", theme = shinytheme("flatly"),
+    tabPanel("Overview",
+             fluidPage(
+               h3("Overview"),
+               p("This is an interactive data visualization platform where you can explore real data from oysters subjected to our resazurin assay."),
+               p("More info at ", tags$a(href = "https://robertslab.github.io/resazurin-assay-development/public-summary.html", target = "_blank", "project summary"), "."),
+               p(strong("Right now the data is loading..."), " After a few minutes head over to the Trajectories and Summaries tabs and take a look!")
              )
     ),
     tabPanel("Trajectories",
@@ -145,30 +126,31 @@ tu <- tagList(
                             selectInput("color_by", "Color By", choices = c("family","phenotype","temperature","length.mm"), selected = "family"),
                             selectInput("facet_by", "Facet By", choices = c(None = ".","date","family","phenotype"), selected = "date"),
                             sliderInput("time_range", "Timepoints", min = 0, max = 4, value = c(0,4), step = 1),
+                            checkboxInput("aggregate_means", "Show group means only", FALSE),
                             checkboxInput("show_points", "Show Points", TRUE),
                             checkboxInput("show_lines", "Show Lines", TRUE),
                             checkboxInput("use_loess", "Smooth (loess)", FALSE),
-                            checkboxInput("log_y", "Log10 Y", FALSE)
+                            checkboxInput("log_y", "Log10 Y", FALSE),
+                            numericInput("oversat", "Oversaturation Threshold", 3000, min = 1000, step = 100),
+                            helpText("Example dataset auto-loaded (date 20250630 excluded).")
                ),
                mainPanel(
-                 plotlyOutput("trajectory_plot", height = 600)
+                 plotlyOutput("trajectory_plot", height = 600),
+                 verbatimTextOutput("process_log")
                )
              )
     ),
     tabPanel("Summaries",
              sidebarLayout(
                sidebarPanel(width = 3,
-                            selectInput("summary_metric", "Metric", choices = c("AUC","delta_T0_T1","delta_T1_T2","delta_T2_T3","delta_T3_T4")),
+                            selectInput("summary_metric", "Metric", choices = c("AUC")),
                             selectInput("group_var", "Group", choices = c("family","phenotype"), selected = "family"),
                             checkboxInput("jitter", "Add Jitter", TRUE)
                ),
-               mainPanel(
-                 plotlyOutput("summary_plot", height = 600)
-               )
+               mainPanel(plotlyOutput("summary_plot", height = 600))
              )
     )
   )
-)
 
 #-----------------------------
 # SERVER
@@ -180,59 +162,38 @@ sv <- function(input, output, session){
     isolate(log_msg(paste0(log_msg(), "\n", format(Sys.time(), "%H:%M:%S"), " - ", txt)))
   }
 
-  raw_data <- eventReactive(input$process, {
-    if(isTRUE(input$use_repo_plate)){
-      append_log(paste0("Root detected: ", PROJECT_ROOT))
-      plate_dir <- file.path(DATA_DIR, "plate-files")
-      plate_paths <- list.files(plate_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
-      append_log(paste("Found", length(plate_paths), "xlsx plate files"))
-      if(length(plate_paths)==0) validate(paste0("No example plate files found in ", plate_dir))
-      # mimic original exclusion of 20250630 after list creation if checkbox chosen separately
-      df_list <- lapply(plate_paths, function(p){
-        tryCatch(read_plate_file(p), error = function(e){append_log(paste("Failed:", p, e$message)); NULL})
-      })
-      df <- bind_rows(df_list)
-    } else {
-      req(input$plate_files)
-      df <- process_uploaded_files(input$plate_files)
-    }
-    # Ensure date is character and safely filter 20250630
-    if("date" %in% names(df)) df <- df %>% mutate(date = as.character(date))
-    if(input$exclude_20250630 && "date" %in% names(df)){
+  # Auto-load example plate data (recursively) and exclude 20250630
+  raw_data <- reactive({
+    plate_dir <- file.path(DATA_DIR, "plate-files")
+    plate_paths <- list.files(plate_dir, pattern = "\\.xlsx$", full.names = TRUE, recursive = TRUE)
+    validate(need(length(plate_paths) > 0, paste0("No example plate files in ", plate_dir)))
+    df_list <- lapply(plate_paths, function(p){
+      tryCatch(read_plate_file(p), error = function(e){append_log(paste("Failed", basename(p), e$message)); NULL})
+    })
+    df <- bind_rows(df_list)
+    if("date" %in% names(df)){
       before_n <- nrow(df)
-      df <- df %>% filter(!is.na(date) & date != '20250630')
+      df <- df %>% mutate(date = as.character(date)) %>% filter(!is.na(date) & date != '20250630')
       append_log(paste("Excluded 20250630 rows:", before_n - nrow(df)))
     }
-     append_log(paste("Loaded", nrow(df), "rows from plate files"))
+    append_log(paste("Loaded", nrow(df), "rows from example plate files"))
     df
   })
 
   metadata <- reactive({
-    if(isTRUE(input$use_repo_meta)){
-      path <- file.path(DATA_DIR,"trial_metadata.xlsx")
-      validate(need(file.exists(path), "Repo metadata file not found"))
-      md <- read_excel(path)
-      append_log("Loaded metadata from repo file")
-    } else {
-      req(input$metadata_file)
-      md <- read_excel(input$metadata_file$datapath)
-      append_log("Loaded metadata from upload")
-    }
-    md %>% mutate(date = as.character(date))
+    path <- file.path(DATA_DIR, "trial_metadata.xlsx")
+    validate(need(file.exists(path), "Repo metadata file not found"))
+    md <- read_excel(path) %>% mutate(date = as.character(date))
+    append_log("Loaded metadata")
+    md
   })
 
   size_df <- reactive({
-    if(isTRUE(input$use_repo_size)){
-      path <- file.path(DATA_DIR,"size","trial_size.xlsx")
-      validate(need(file.exists(path), "Repo size file not found"))
-      sd <- read_excel(path)
-      append_log("Loaded size from repo file")
-    } else {
-      req(input$size_file)
-      sd <- read_excel(input$size_file$datapath)
-      append_log("Loaded size from upload")
-    }
-    sd %>% mutate(date = as.character(date))
+    path <- file.path(DATA_DIR, "size", "trial_size.xlsx")
+    validate(need(file.exists(path), "Repo size file not found"))
+    sd <- read_excel(path) %>% mutate(date = as.character(date))
+    append_log("Loaded size data")
+    sd
   })
 
   processed <- reactive({
@@ -251,72 +212,62 @@ sv <- function(input, output, session){
     compute_auc(processed())
   })
 
-  deltas <- reactive({
-    req(processed())
-    compute_deltas(processed())
-  })
-
-  output$raw_preview <- renderDT({
-    datatable(raw_data(), options = list(pageLength = 5, scrollX = TRUE))
-  })
-
-  output$processed_preview <- renderDT({
-    datatable(processed(), options = list(pageLength = 10, scrollX = TRUE))
-  })
-
-  output$auc_table <- renderDT({
-    datatable(aucs(), options = list(pageLength = 10, scrollX = TRUE))
-  })
-
-  output$deltas_table <- renderDT({
-    datatable(deltas(), options = list(pageLength = 10, scrollX = TRUE))
-  })
+  # Warm-up to auto-trigger loading on app start
+  observe({ raw_data(); metadata(); size_df(); processed(); aucs() })
 
   output$process_log <- renderText({ log_msg() })
 
   output$trajectory_plot <- renderPlotly({
-    df <- processed()
-    req(nrow(df) > 0)
+    df <- processed(); req(nrow(df) > 0)
     df <- df %>% filter(timepoint >= input$time_range[1], timepoint <= input$time_range[2])
-    p <- ggplot(df, aes(x = timepoint, y = value, group = unique))
-    color_var <- sym(input$color_by)
-    if(input$color_by == 'length.mm'){
-      p <- p + geom_point(aes(color = !!color_var), size = 1, alpha = 0.7)
-    } else if(input$show_points){
-      p <- p + geom_point(aes(color = !!color_var), size = 1, alpha = 0.6)
-    }
-    if(input$show_lines){
-      p <- p + geom_line(aes(color = !!color_var), alpha = 0.4)
-    }
-    if(input$use_loess){
-      p <- p + stat_smooth(aes(color = !!color_var, group = !!color_var), method = 'loess', se = FALSE, linewidth = 1.1)
+    color_var <- rlang::sym(input$color_by)
+    if(isTRUE(input$aggregate_means)){
+      facet_sel <- input$facet_by
+      if(facet_sel != '.'){
+        facet_sym <- rlang::sym(facet_sel)
+        agg <- df %>% group_by(timepoint, !!color_var, !!facet_sym) %>%
+          summarise(mean_value = mean(value, na.rm = TRUE), se = sd(value, na.rm = TRUE)/sqrt(sum(!is.na(value))), .groups='drop')
+      } else {
+        agg <- df %>% group_by(timepoint, !!color_var) %>%
+          summarise(mean_value = mean(value, na.rm = TRUE), se = sd(value, na.rm = TRUE)/sqrt(sum(!is.na(value))), .groups='drop')
+      }
+      p <- ggplot(agg, aes(x = timepoint, y = mean_value, color = !!color_var, group = !!color_var, fill = !!color_var)) +
+        geom_ribbon(aes(ymin = mean_value - se, ymax = mean_value + se), alpha = 0.15, colour = NA, show.legend = FALSE) +
+        geom_line(size = 1) +
+        geom_point(size = 2) +
+        labs(y = 'Mean Normalized Fluorescence (corr/mm)')
+    } else {
+      p <- ggplot(df, aes(x = timepoint, y = value, group = unique))
+      if(input$color_by == 'length.mm'){
+        p <- p + geom_point(aes(color = !!color_var), size = 1, alpha = 0.7)
+      } else if(input$show_points){
+        p <- p + geom_point(aes(color = !!color_var), size = 1, alpha = 0.6)
+      }
+      if(input$show_lines){ p <- p + geom_line(aes(color = !!color_var), alpha = 0.4) }
+      if(input$use_loess){ p <- p + stat_smooth(aes(color = !!color_var, group = !!color_var), method='loess', se=FALSE, linewidth=1.1) }
     }
     if(input$facet_by != '.'){
       facet_var <- as.formula(paste('~', input$facet_by))
       p <- p + facet_wrap(facet_var, scales = 'free_y')
     }
-    if(input$log_y){
-      p <- p + scale_y_log10()
-    }
-    p <- p + theme_classic() + labs(x = 'Timepoint', y = 'Normalized Fluorescence (corr/mm)', color = input$color_by)
-    ggplotly(p)
+    if(input$log_y){ p <- p + scale_y_log10() }
+    p <- p + theme_classic() + labs(x='Timepoint', color=input$color_by)
+    tryCatch(ggplotly(p), error = function(e){
+      showNotification(paste('Plotly error:', e$message), type='error')
+      ggplotly(ggplot() + theme_void() + annotate('text', x=0, y=0, label='Plot error'))
+    })
   })
 
   output$summary_plot <- renderPlotly({
-    metric <- input$summary_metric
+    dat <- aucs(); req(nrow(dat) > 0)
     grp <- input$group_var
-    if(metric == 'AUC'){
-      dat <- aucs()
-      yvar <- 'AUC'
-    } else {
-      dat <- deltas()
-      yvar <- metric
-    }
-    req(nrow(dat) > 0)
-    p <- ggplot(dat, aes_string(x = grp, y = yvar, color = grp)) +
-      geom_violin(fill = NA) +
-      {if(input$jitter) geom_jitter(width = 0.15, alpha = 0.5)} +
-      theme_classic() + labs(x = grp, y = yvar)
+    grp_sym <- rlang::sym(grp)
+    summ <- dat %>% group_by(!!grp_sym) %>% summarise(mean = mean(AUC, na.rm=TRUE), se = sd(AUC, na.rm=TRUE)/sqrt(sum(!is.na(AUC))), .groups='drop')
+    p <- ggplot() +
+      {if(input$jitter) geom_jitter(data = dat, aes_string(x = grp, y = 'AUC', color = grp), width = 0.15, alpha = 0.5)} +
+      geom_errorbar(data = summ, aes_string(x = grp, ymin = 'mean - se', ymax = 'mean + se', color = grp), width = 0.25, linewidth = 0.6) +
+      geom_point(data = summ, aes_string(x = grp, y = 'mean', color = grp), size = 3) +
+      theme_classic() + labs(x = grp, y = 'AUC')
     ggplotly(p)
   })
 }
