@@ -167,6 +167,16 @@ full_data<-full_data%>%
 head(full_data)
 ```
 
+Remove oysters identified as dead (likely dead before trials). 
+
+```{r}
+remove<-c("plate3 E07", "plate3 F07", "plate3 F08", "plate4 F07")
+
+full_data<-full_data%>%
+  mutate(unique=paste(plate, well))%>%
+  filter(!unique %in% remove)
+```
+
 ## Prep the data 
 
 Plot the raw data. 
@@ -463,6 +473,8 @@ ggsave(plot10a, filename="figures/ploidy/auc_ploidy.png", width=5, height=5, uni
 Model the data. 
 
 ```{r}
+hist(sqrt(aucs$AUC))
+
 model<-lmer(sqrt(AUC) ~ ploidy + (1|plate), data=aucs)
 
 anova(model)
