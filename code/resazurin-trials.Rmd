@@ -1056,7 +1056,7 @@ plot15<-merged%>%
   summarise(AUC=mean(AUC))%>%
   
   ggplot(., aes(x = AUC, y = `survival-high-salinity`)) +
-  facet_wrap(~phenotype)+
+  facet_wrap(~phenotype, scales="free_x")+
   geom_point(color = "steelblue", size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, color = "firebrick", linetype = "dashed") +  # regression line
   labs(
@@ -1067,6 +1067,27 @@ plot15<-merged%>%
   theme_classic();plot15
 
 ggsave(plot15, filename="figures/correlations/auc_survival-high-salinity.png", width=8, height=6, units="in")
+```
+
+Run a statistical test for this correlation. 
+
+```{r}
+model_data<-merged%>%
+  group_by(family, phenotype, `survival-high-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="high-salinity")
+
+hist(model_data$AUC)
+hist(model_data$`survival-high-salinity`)
+  
+cor.test(model_data$AUC, model_data$`survival-high-salinity`, method=c("spearman"))
+
+model_data<-merged%>%
+  group_by(family, phenotype, `survival-high-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="low-salinity")
+  
+cor.test(model_data$AUC, model_data$`survival-high-salinity`, method=c("spearman"))
 ```
 
 Correlation of survival in low salinity and total metabolic activity. 
@@ -1084,15 +1105,32 @@ plot16<-merged%>%
   geom_smooth(method = "lm", se = TRUE, linetype = "solid") +  # regression line
   labs(
     title = "",
-    x = "Total Metabolic Activity (AUC)",
+    x = "Metabolism (AUC)",
     y = "Predicted Survival in Low Salinity Environments"
   )+
   theme_classic();plot16
 
-ggsave(plot16, filename="figures/correlations/auc_survival-low-salinity.png", width=8, height=6, units="in")
+# create an annotation data frame — one row per facet
+ann_df <- data.frame(
+  phenotype = c("high-salinity", "low-salinity"),  # use exact facet names from your data
+  label = c("p = 0.314", "p = 0.004"),
+  x = c(Inf, Inf),   # top right corner
+  y = c(Inf, Inf)
+)
+
+# add facet-specific text
+plot16 <- plot16 +
+  geom_text(
+    data = ann_df,
+    aes(x = x, y = y, label = label),
+    hjust = 1.1, vjust = 1.5,
+    inherit.aes = FALSE
+  );plot16
+
+ggsave(plot16, filename="figures/correlations/auc_survival-low-salinity.png", width=8, height=5, units="in")
 ```
 
-Run a statistical test for this corrleation. 
+Run a statistical test for this correlation. 
 
 ```{r}
 model_data<-merged%>%
@@ -1100,14 +1138,14 @@ model_data<-merged%>%
   summarise(AUC=mean(AUC))%>%
   filter(phenotype=="high-salinity")
   
-cor.test(model_data$AUC, model_data$`survival-low-salinity`)
+cor.test(model_data$AUC, model_data$`survival-low-salinity`, method = c("spearman"))
 
 model_data<-merged%>%
   group_by(family, phenotype, `survival-low-salinity`)%>%
   summarise(AUC=mean(AUC))%>%
   filter(phenotype=="low-salinity")
   
-cor.test(model_data$AUC, model_data$`survival-low-salinity`)
+cor.test(model_data$AUC, model_data$`survival-low-salinity`, method=c("spearman"))
 ```
 
 Significant correlation for low salinity but not high salinity selected groups. 
