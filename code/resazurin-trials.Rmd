@@ -459,7 +459,7 @@ plot2e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_family, color =
   labs(
     title = "A",
     x = "Hours",
-    y = expression(paste("Fold Change in Fluorescence (mm" ^-1, ")"))
+    y = expression(paste("Metabolism (fold change fluorescence mm" ^-1, ")"))
   ) +
   theme_classic() +
   theme(legend.position="none")+
@@ -550,7 +550,7 @@ plot3e<-ggplot(pred_data, aes(x = timepoint, y = predicted_value_phenotype, colo
   labs(
     title = "B",
     x = "Hours",
-    y = expression(paste("Fold Change in Fluorescence (mm" ^-1, ")"))
+    y = expression(paste("Metabolism (fold change fluorescence mm" ^-1, ")"))
   ) +
   theme_classic() +
   guides(fill = "none");plot3e  
@@ -781,7 +781,7 @@ plot10a<-aucs%>%
   scale_fill_manual(values=c("darkorange", "purple2"), name="")+
   scale_colour_manual(values=c("darkorange", "purple2"), name="")+
   geom_errorbar(aes(ymin=mean-se, ymax=mean+se))+
-  labs(title = "C", x = "Family", y = "AUC") +
+  labs(title = "C", x = "Family", y = "Metabolism (AUC)") +
   theme_classic();plot10a
 
 ggsave(plot10a, filename="figures/trials/auc_family.png", width=10, height=5, units="in")
@@ -801,7 +801,7 @@ plot10b<-aucs%>%
   scale_fill_manual(values=c("darkorange", "purple2"), name="")+
   scale_colour_manual(values=c("darkorange", "purple2"), name="")+
   geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.1)+
-  labs(title = "D", x = "Phenotype", y = "AUC") +
+  labs(title = "D", x = "Phenotype", y = "Metabolism (AUC)") +
   ylim(6, 10)+
   theme_classic()+
   theme(legend.position="none");plot10b
