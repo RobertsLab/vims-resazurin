@@ -1104,7 +1104,7 @@ plot16<-merged%>%
   geom_point(size = 2) +  # scatter points
   geom_smooth(method = "lm", se = TRUE, linetype = "solid") +  # regression line
   labs(
-    title = "",
+    title = "E",
     x = "Metabolism (AUC)",
     y = "Predicted Survival in Low Salinity Environments"
   )+
