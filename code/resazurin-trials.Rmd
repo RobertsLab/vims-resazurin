@@ -1191,6 +1191,40 @@ plot18<-merged%>%
 ggsave(plot18, filename="figures/correlations/auc_weight-low-salinity.png", width=8, height=6, units="in")
 ```
 
+Run a statistical test for this correlation. 
+
+```{r}
+model_data<-merged%>%
+  group_by(family, phenotype, `weight-low-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="high-salinity")
+  
+cor.test(model_data$AUC, model_data$`weight-low-salinity`, method = c("spearman"))
+
+model_data<-merged%>%
+  group_by(family, phenotype, `weight-low-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="low-salinity")
+  
+cor.test(model_data$AUC, model_data$`weight-low-salinity`, method=c("spearman"))
+```
+
+```{r}
+model_data<-merged%>%
+  group_by(family, phenotype, `weight-high-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="high-salinity")
+  
+cor.test(model_data$AUC, model_data$`weight-high-salinity`, method = c("spearman"))
+
+model_data<-merged%>%
+  group_by(family, phenotype, `weight-high-salinity`)%>%
+  summarise(AUC=mean(AUC))%>%
+  filter(phenotype=="low-salinity")
+  
+cor.test(model_data$AUC, model_data$`weight-high-salinity`, method=c("spearman"))
+```
+
 ### Correlate with metabolic slope in response to acute stress (Delta T0-T1)
 
 ```{r}
