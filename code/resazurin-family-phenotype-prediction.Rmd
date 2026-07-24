@@ -1,0 +1,629 @@
+---
+title: "resazurin-family-phenotype-prediction"
+author: "Ariana Huffmyer"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  github_document:
+    toc: true
+    number_sections: true
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    code_download: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Background
+
+**Question:** *How well can a resazurin metabolic assay predict the survival
+phenotype of an oyster family, and do the same metabolic features predict
+performance under high-salinity vs low-salinity conditions?*
+
+Two independent datasets describe the same 48 families:
+
+1. **Survival phenotypes** — `data/predicted_performance.xlsx` records each
+   family's observed survival proportion under both high-salinity
+   (`survival-high-salinity`) and low-salinity (`survival-low-salinity`)
+   conditions, along with family rankings within each condition
+   (`rank-survival-high-salinity`, `rank-survival-low-salinity`; 1 = best).
+   Families span two parentage groups: high-salinity and low-salinity origin.
+
+2. **Metabolic curve features** — `output/resazurin-curves/curve_features.csv`
+   contains ~25 curve shape/capacity/rate traits per individual extracted from
+   resazurin assay timecourses (AUC, Vmax, metabolic scope, depression index,
+   resilience ratio, trajectory class, etc.).
+
+We ask (a) which resazurin curve features predict survival under each salinity
+condition, and (b) whether different features predict performance under the two
+conditions, which would reveal condition-specific metabolic signals.
+
+## Expected inputs
+
+| Path | Description |
+|------|-------------|
+| `output/resazurin-curves/curve_features.csv` | Per-individual curve traits |
+| `data/predicted_performance.xlsx` | Family survival proportions and rankings |
+
+## Expected outputs
+
+All written to `output/resazurin-prediction/`.
+
+| File | Description |
+|------|-------------|
+| `family_feature_matrix.csv` | Family-mean resazurin features by parentage group |
+| `feature_phenotype_correlations.csv` | Spearman/Pearson correlations for all features × phenotypes |
+| `top_predictors.csv` | Best-correlated features for each survival condition |
+| `lofo_cv_performance.csv` | LOFO-CV performance for candidate predictors |
+| `resazurin_index_predictions.csv` | Per-family observed vs predicted for composite index |
+| `figures/` | Correlation ranking, comparison scatter, best-predictor, index, heatmap |
+
+# Setup
+
+```{r setup}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  comment = "",
+  results = "hold"
+)
+```
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+library(here)
+library(ggrepel)
+library(cowplot)
+```
+
+```{r paths}
+resazurin_features_path <- here("output", "resazurin-curves", "curve_features.csv")
+phenotype_path          <- here("data", "predicted_performance.xlsx")
+
+out_dir <- here("output", "resazurin-prediction")
+fig_dir <- file.path(out_dir, "figures")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+
+stopifnot(file.exists(resazurin_features_path), file.exists(phenotype_path))
+
+# The two primary survival conditions analysed in parallel
+PRIMARY_PHENOTYPES <- c("survival_high_salinity", "survival_low_salinity")
+PHENOTYPE_LABELS   <- c(
+  survival_high_salinity = "High-salinity survival",
+  survival_low_salinity  = "Low-salinity survival"
+)
+```
+
+# Load the survival phenotype
+
+Both survival proportions (0–1, higher = better) are the primary phenotypes.
+Family ranks (1 = best within condition) are retained as secondary variables.
+
+```{r load-phenotype}
+phenotype <- read_excel(phenotype_path) %>%
+  transmute(
+    family                       = as.character(family),
+    survival_high_salinity       = `survival-high-salinity`,
+    survival_low_salinity        = `survival-low-salinity`,
+    rank_survival_high_salinity  = `rank-survival-high-salinity`,
+    rank_survival_low_salinity   = `rank-survival-low-salinity`
+  )
+
+cat("Families with phenotype data:", nrow(phenotype), "\n")
+cat("High-salinity survival range:",
+    round(range(phenotype$survival_high_salinity), 3), "\n")
+cat("Low-salinity survival range:",
+    round(range(phenotype$survival_low_salinity), 3), "\n")
+phenotype
+```
+
+# Load resazurin curve features
+
+```{r load-resazurin}
+resazurin_raw <- read_csv(resazurin_features_path, show_col_types = FALSE) %>%
+  rename(parentage_group = phenotype) %>%
+  mutate(family = str_to_lower(trimws(as.character(family_id_group))))
+
+resazurin <- resazurin_raw %>%
+  filter(family %in% phenotype$family)
+
+cat("Families in resazurin data:    ", n_distinct(resazurin_raw$family), "\n")
+cat("Families matched to phenotype: ", n_distinct(resazurin$family), "\n")
+cat("Parentage groups:              ",
+    paste(sort(unique(resazurin$parentage_group)), collapse = ", "), "\n")
+cat("Value metrics:                 ",
+    paste(sort(unique(resazurin$value_metric)), collapse = ", "), "\n")
+```
+
+# Build the family-level feature matrix
+
+```{r feature-matrix}
+feature_cols <- resazurin %>%
+  select(where(is.numeric)) %>%
+  select(-any_of(c("n_timepoints", "family_id_group"))) %>%
+  names()
+feature_cols <- setdiff(feature_cols, "baseline_value")
+
+family_feature_long <- resazurin %>%
+  select(parentage_group, value_metric, family, all_of(feature_cols)) %>%
+  pivot_longer(all_of(feature_cols),
+               names_to = "feature", values_to = "value") %>%
+  filter(is.finite(value)) %>%
+  bind_rows({.} %>% mutate(parentage_group = "all")) %>%
+  group_by(parentage_group, value_metric, feature, family) %>%
+  summarise(
+    n_indiv     = n(),
+    family_mean = mean(value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(parentage_group, value_metric, feature) %>%
+  filter(n_distinct(family) >= 7) %>%
+  ungroup()
+
+write_csv(family_feature_long, file.path(out_dir, "family_feature_matrix.csv"))
+
+family_feature_long %>%
+  count(parentage_group, value_metric, name = "n_feature_rows") %>%
+  arrange(parentage_group, value_metric)
+```
+
+# Screen: correlate each feature with survival phenotypes
+
+Spearman `rho` (rank agreement) is primary; Pearson `r` is reported alongside.
+Both survival conditions are assessed in parallel.
+
+```{r correlations}
+phenotypes_long <- phenotype %>%
+  select(family, all_of(PRIMARY_PHENOTYPES)) %>%
+  pivot_longer(-family, names_to = "survival_condition",
+               values_to = "pheno_value")
+
+cor_one <- function(x, y) {
+  ok <- is.finite(x) & is.finite(y)
+  if (sum(ok) < 7 || sd(x[ok]) == 0 || sd(y[ok]) == 0) {
+    return(tibble(n = sum(ok), spearman_rho = NA_real_, spearman_p = NA_real_,
+                  pearson_r = NA_real_, pearson_p = NA_real_))
+  }
+  sp <- suppressWarnings(cor.test(x[ok], y[ok], method = "spearman"))
+  pe <- suppressWarnings(cor.test(x[ok], y[ok], method = "pearson"))
+  tibble(n = sum(ok),
+         spearman_rho = unname(sp$estimate), spearman_p = sp$p.value,
+         pearson_r    = unname(pe$estimate), pearson_p  = pe$p.value)
+}
+
+feature_phenotype_correlations <- family_feature_long %>%
+  inner_join(phenotypes_long, by = "family",
+             relationship = "many-to-many") %>%
+  group_by(parentage_group, value_metric, feature, survival_condition) %>%
+  group_modify(~ cor_one(.x$family_mean, .x$pheno_value)) %>%
+  ungroup() %>%
+  arrange(survival_condition, desc(abs(spearman_rho)))
+
+write_csv(feature_phenotype_correlations,
+          file.path(out_dir, "feature_phenotype_correlations.csv"))
+
+# Top predictors for each survival condition
+top_predictors <- feature_phenotype_correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  group_by(survival_condition) %>%
+  arrange(desc(abs(spearman_rho))) %>%
+  slice_head(n = 15) %>%
+  ungroup()
+
+write_csv(top_predictors, file.path(out_dir, "top_predictors.csv"))
+
+knitr::kable(
+  top_predictors %>%
+    transmute(survival_condition, parentage_group, feature, n,
+              spearman_rho = round(spearman_rho, 3),
+              spearman_p   = signif(spearman_p, 3),
+              pearson_r    = round(pearson_r, 3)),
+  caption = "Top resazurin features predicting survival under each salinity condition"
+)
+```
+
+```{r cor-ranking-plot, fig.width=12, fig.height=8}
+plot_cor <- feature_phenotype_correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  group_by(survival_condition, parentage_group, value_metric) %>%
+  slice_max(abs(spearman_rho), n = 8, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(
+    survival_label = PHENOTYPE_LABELS[survival_condition],
+    feature        = reorder(feature, abs(spearman_rho))
+  )
+
+p_cor <- ggplot(plot_cor,
+    aes(x = spearman_rho, y = feature, fill = spearman_p < 0.05)) +
+  geom_col() +
+  geom_vline(xintercept = 0, linewidth = 0.3) +
+  facet_grid(survival_label ~ parentage_group, scales = "free_y") +
+  scale_fill_manual(values = c("FALSE" = "grey70", "TRUE" = "#0072B2"),
+                    name = "Spearman p < 0.05") +
+  labs(x = "Spearman rho with survival proportion",
+       y = "Resazurin curve feature",
+       title = "Resazurin features vs survival under each salinity condition") +
+  theme_classic(base_size = 10) +
+  theme(strip.text = element_text(size = 9))
+
+p_cor
+ggsave(file.path(fig_dir, "feature_phenotype_correlation_ranking.png"),
+       p_cor, width = 12, height = 8)
+```
+
+# Comparing predictors: high-salinity vs low-salinity survival
+
+How does each feature's predictive power for high-salinity survival compare to
+its power for low-salinity survival? Features that fall off the diagonal predict
+one condition much better than the other.
+
+```{r feature-comparison, fig.width=9, fig.height=7}
+comparison_df <- feature_phenotype_correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  select(parentage_group, value_metric, feature, survival_condition, spearman_rho) %>%
+  pivot_wider(names_from  = survival_condition,
+              values_from = spearman_rho) %>%
+  filter(is.finite(survival_high_salinity), is.finite(survival_low_salinity)) %>%
+  mutate(rho_diff      = survival_high_salinity - survival_low_salinity,
+         abs_rho_max   = pmax(abs(survival_high_salinity),
+                              abs(survival_low_salinity)),
+         label_feature = if_else(abs_rho_max > 0.25 | abs(rho_diff) > 0.15,
+                                 feature, NA_character_))
+
+p_compare <- ggplot(comparison_df,
+    aes(x = survival_high_salinity, y = survival_low_salinity,
+        colour = parentage_group, shape = parentage_group)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed",
+              colour = "grey50", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linewidth = 0.25, colour = "grey70") +
+  geom_vline(xintercept = 0, linewidth = 0.25, colour = "grey70") +
+  geom_point(size = 2.5, alpha = 0.8) +
+  ggrepel::geom_text_repel(aes(label = label_feature),
+                            size = 3, max.overlaps = 15, show.legend = FALSE,
+                            na.rm = TRUE) +
+  scale_colour_manual(values = c("all"           = "#444444",
+                                 "high-salinity" = "#D55E00",
+                                 "low-salinity"  = "#0072B2")) +
+  scale_shape_manual(values = c("all" = 15, "high-salinity" = 16,
+                                "low-salinity" = 17)) +
+  labs(
+    x      = "Spearman rho — high-salinity survival",
+    y      = "Spearman rho — low-salinity survival",
+    colour = "Parentage group", shape = "Parentage group",
+    title  = "Feature predictive power: high-salinity vs low-salinity survival",
+    subtitle = "Dashed line = equal prediction; points above = better low-sal predictor"
+  ) +
+  theme_classic(base_size = 11)
+
+p_compare
+ggsave(file.path(fig_dir, "feature_comparison_high_vs_low_salinity.png"),
+       p_compare, width = 9, height = 7)
+
+# Table: features with the largest divergence in predictive direction
+cat("\nFeatures with largest differential predictive power",
+    "(|rho_high - rho_low| > 0.10):\n\n")
+comparison_df %>%
+  filter(abs(rho_diff) > 0.10) %>%
+  arrange(desc(abs(rho_diff))) %>%
+  transmute(parentage_group, feature,
+            rho_high_sal = round(survival_high_salinity, 3),
+            rho_low_sal  = round(survival_low_salinity,  3),
+            rho_diff     = round(rho_diff, 3)) %>%
+  print(n = 20)
+```
+
+# Cross-validated prediction (leave-one-family-out)
+
+```{r lofo-fn}
+lofo_cv <- function(df) {
+  df <- df %>% filter(is.finite(x), is.finite(y))
+  if (nrow(df) < 7 || sd(df$x) == 0) {
+    return(tibble(n = nrow(df), cv_spearman = NA_real_, cv_rmse = NA_real_))
+  }
+  preds <- map_dbl(seq_len(nrow(df)), function(i) {
+    fit <- lm(y ~ x, data = df[-i, ])
+    predict(fit, newdata = df[i, ])
+  })
+  sp <- suppressWarnings(cor(preds, df$y, method = "spearman"))
+  tibble(n = nrow(df), cv_spearman = sp,
+         cv_rmse = sqrt(mean((preds - df$y)^2)))
+}
+```
+
+```{r lofo-candidates}
+# Top 3 candidate features per condition × parentage_group × metric
+candidates <- feature_phenotype_correlations %>%
+  filter(is.finite(spearman_rho), n >= 7) %>%
+  group_by(survival_condition, parentage_group, value_metric) %>%
+  slice_max(abs(spearman_rho), n = 3, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(survival_condition, parentage_group, value_metric, feature)
+
+lofo_cv_performance <- candidates %>%
+  left_join(family_feature_long,
+            by = c("parentage_group", "value_metric", "feature"),
+            relationship = "many-to-many") %>%
+  left_join(
+    phenotypes_long %>% rename(survival_condition = survival_condition),
+    by = c("family", "survival_condition")
+  ) %>%
+  rename(x = family_mean, y = pheno_value) %>%
+  group_by(survival_condition, parentage_group, value_metric, feature) %>%
+  group_modify(~ lofo_cv(.x)) %>%
+  ungroup() %>%
+  left_join(
+    feature_phenotype_correlations %>%
+      select(survival_condition, parentage_group, value_metric,
+             feature, spearman_rho),
+    by = c("survival_condition", "parentage_group", "value_metric", "feature")
+  ) %>%
+  arrange(survival_condition, desc(cv_spearman))
+
+write_csv(lofo_cv_performance,
+          file.path(out_dir, "lofo_cv_performance.csv"))
+
+knitr::kable(
+  lofo_cv_performance %>%
+    transmute(survival_condition, parentage_group, feature, n,
+              in_sample_rho = round(spearman_rho, 3),
+              cv_spearman   = round(cv_spearman,  3),
+              cv_rmse       = round(cv_rmse, 4)),
+  caption = "Leave-one-family-out CV: single-feature prediction of survival"
+)
+```
+
+## Best single predictor per condition
+
+```{r best-single-scatter, fig.width=14, fig.height=6}
+best_singles <- lofo_cv_performance %>%
+  filter(is.finite(cv_spearman)) %>%
+  group_by(survival_condition) %>%
+  slice_max(cv_spearman, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+plots_best <- map(PRIMARY_PHENOTYPES, function(cond) {
+  bs  <- best_singles %>% filter(survival_condition == cond)
+  df  <- family_feature_long %>%
+    semi_join(bs, by = c("parentage_group", "value_metric", "feature")) %>%
+    left_join(phenotype, by = "family") %>%
+    mutate(pheno_val = .data[[cond]])
+
+  ggplot(df, aes(x = family_mean, y = pheno_val)) +
+    geom_smooth(method = "lm", se = TRUE, color = "#0072B2",
+                fill = "#0072B2", alpha = 0.15) +
+    geom_point(size = 2.5) +
+    geom_text(aes(label = family), size = 3, vjust = -0.8) +
+    labs(
+      title    = PHENOTYPE_LABELS[cond],
+      subtitle = sprintf("Best predictor: %s (%s) | rho = %.2f | CV rho = %.2f",
+                         bs$feature, bs$parentage_group,
+                         bs$spearman_rho, bs$cv_spearman),
+      x = sprintf("Family-mean %s", bs$feature),
+      y = PHENOTYPE_LABELS[cond]
+    ) +
+    theme_classic(base_size = 11)
+})
+
+p_best_both <- cowplot::plot_grid(plotlist = plots_best, nrow = 1,
+                                  labels = "AUTO")
+p_best_both
+ggsave(file.path(fig_dir, "best_single_predictor_scatter.png"),
+       p_best_both, width = 14, height = 6)
+```
+
+# Multi-feature resazurin index (per survival condition)
+
+For each survival condition, a simple index is built from the top 4 features
+in the best-performing parentage group: z-score each, sign-align so that
+higher always means "more survival-like", then average.
+
+```{r resazurin-index}
+build_index <- function(cond) {
+  best_grp <- lofo_cv_performance %>%
+    filter(survival_condition == cond, is.finite(cv_spearman)) %>%
+    slice_max(cv_spearman, n = 1, with_ties = FALSE)
+
+  idx_feats <- feature_phenotype_correlations %>%
+    filter(survival_condition == cond,
+           parentage_group == best_grp$parentage_group,
+           value_metric    == best_grp$value_metric,
+           is.finite(spearman_rho), n >= 7) %>%
+    arrange(desc(abs(spearman_rho))) %>%
+    slice_head(n = 4)
+
+  cat("\n---", PHENOTYPE_LABELS[cond], "---\n")
+  cat("Best group:", best_grp$parentage_group,
+      "| metric:", best_grp$value_metric, "\n")
+  cat("Index features:\n")
+  idx_feats %>%
+    transmute(feature, spearman_rho = round(spearman_rho, 3)) %>%
+    as.data.frame() %>% print(row.names = FALSE)
+
+  wide <- family_feature_long %>%
+    filter(parentage_group == best_grp$parentage_group,
+           value_metric    == best_grp$value_metric) %>%
+    semi_join(idx_feats, by = c("parentage_group", "value_metric", "feature")) %>%
+    left_join(idx_feats %>% select(feature, spearman_rho), by = "feature") %>%
+    group_by(feature) %>%
+    mutate(z = as.numeric(scale(family_mean)),
+           z_signed = z * sign(spearman_rho)) %>%
+    ungroup() %>%
+    group_by(family) %>%
+    summarise(resazurin_index = mean(z_signed, na.rm = TRUE), .groups = "drop") %>%
+    left_join(phenotype, by = "family") %>%
+    mutate(survival_condition   = cond,
+           parentage_group_used = best_grp$parentage_group,
+           pheno_val            = .data[[cond]])
+
+  idx_cv <- lofo_cv(wide %>%
+                      transmute(family, x = resazurin_index, y = pheno_val))
+
+  fit <- lm(pheno_val ~ resazurin_index, data = wide)
+  wide <- wide %>%
+    mutate(predicted_survival = as.numeric(predict(fit)))
+
+  cat(sprintf("Index rho = %.2f | LOFO-CV rho = %.2f | CV RMSE = %.4f\n",
+              suppressWarnings(
+                cor(wide$resazurin_index, wide$pheno_val,
+                    method = "spearman")),
+              idx_cv$cv_spearman, idx_cv$cv_rmse))
+
+  list(wide = wide, cv = idx_cv,
+       best_grp = best_grp$parentage_group,
+       best_metric = best_grp$value_metric)
+}
+
+idx_results <- map(PRIMARY_PHENOTYPES, build_index)
+names(idx_results) <- PRIMARY_PHENOTYPES
+
+index_all <- map_dfr(idx_results, ~ .x$wide)
+write_csv(index_all, file.path(out_dir, "resazurin_index_predictions.csv"))
+```
+
+```{r index-scatter, fig.width=14, fig.height=6}
+plots_idx <- imap(idx_results, function(res, cond) {
+  ggplot(res$wide, aes(x = resazurin_index, y = pheno_val)) +
+    geom_smooth(method = "lm", se = TRUE, color = "#009E73",
+                fill = "#009E73", alpha = 0.15) +
+    geom_point(size = 2.5) +
+    geom_text(aes(label = family), size = 3, vjust = -0.8) +
+    labs(
+      title    = PHENOTYPE_LABELS[cond],
+      subtitle = sprintf("group = %s | LOFO-CV rho = %.2f",
+                         res$best_grp, res$cv$cv_spearman),
+      x = "Resazurin index (higher = more survival-like)",
+      y = PHENOTYPE_LABELS[cond]
+    ) +
+    theme_classic(base_size = 11)
+})
+
+p_idx_both <- cowplot::plot_grid(plotlist = plots_idx, nrow = 1,
+                                 labels = "AUTO")
+p_idx_both
+ggsave(file.path(fig_dir, "resazurin_index_scatter.png"),
+       p_idx_both, width = 14, height = 6)
+```
+
+# Feature heatmaps ordered by survival rank
+
+Families are ordered from highest to lowest survival within each condition.
+
+```{r profile-heatmap, fig.width=13, fig.height=8}
+plots_heat <- imap(idx_results, function(res, cond) {
+  rank_col <- if (cond == "survival_high_salinity") {
+    "rank_survival_high_salinity"
+  } else {
+    "rank_survival_low_salinity"
+  }
+  rank_order <- phenotype %>%
+    arrange(.data[[rank_col]]) %>%
+    pull(family)
+
+  heat_features <- feature_phenotype_correlations %>%
+    filter(survival_condition == cond,
+           parentage_group    == res$best_grp,
+           value_metric       == res$best_metric,
+           is.finite(spearman_rho)) %>%
+    slice_max(abs(spearman_rho), n = 10, with_ties = FALSE) %>%
+    pull(feature)
+
+  heat_df <- family_feature_long %>%
+    filter(parentage_group == res$best_grp,
+           value_metric    == res$best_metric,
+           feature         %in% heat_features) %>%
+    group_by(feature) %>%
+    mutate(z = as.numeric(scale(family_mean))) %>%
+    ungroup() %>%
+    mutate(family = factor(family, levels = rank_order))
+
+  ggplot(heat_df, aes(x = family, y = feature, fill = z)) +
+    geom_tile(color = "white", linewidth = 0.3) +
+    scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+                         midpoint = 0, name = "z-score") +
+    labs(
+      title    = PHENOTYPE_LABELS[cond],
+      subtitle = sprintf("group = %s  (left = best survivor)",
+                         res$best_grp),
+      x = "Family (highest → lowest survival)",
+      y = "Curve feature"
+    ) +
+    theme_classic(base_size = 10) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7))
+})
+
+p_heat_both <- cowplot::plot_grid(plotlist = plots_heat, nrow = 1,
+                                  labels = "AUTO")
+p_heat_both
+ggsave(file.path(fig_dir, "family_profile_heatmap.png"),
+       p_heat_both, width = 13, height = 8)
+```
+
+# Synthesis
+
+```{r synthesis, results='asis'}
+for (cond in PRIMARY_PHENOTYPES) {
+  cat("##", PHENOTYPE_LABELS[cond], "\n\n")
+
+  top3 <- feature_phenotype_correlations %>%
+    filter(survival_condition == cond, is.finite(spearman_rho)) %>%
+    arrange(desc(abs(spearman_rho))) %>%
+    slice_head(n = 3)
+
+  best_cv3 <- lofo_cv_performance %>%
+    filter(survival_condition == cond, is.finite(cv_spearman)) %>%
+    arrange(desc(cv_spearman)) %>%
+    slice_head(n = 3)
+
+  cat("**Strongest raw associations:**\n\n")
+  for (i in seq_len(nrow(top3))) {
+    cat(sprintf("- **%s** (%s / %s): rho = %.2f (p = %.3g)\n",
+                top3$feature[i], top3$value_metric[i],
+                top3$parentage_group[i],
+                top3$spearman_rho[i], top3$spearman_p[i]))
+  }
+
+  cat("\n**Best LOFO-CV single predictors:**\n\n")
+  for (i in seq_len(nrow(best_cv3))) {
+    cat(sprintf("- **%s** (%s / %s): CV rho = %.2f, CV RMSE = %.4f\n",
+                best_cv3$feature[i], best_cv3$value_metric[i],
+                best_cv3$parentage_group[i],
+                best_cv3$cv_spearman[i], best_cv3$cv_rmse[i]))
+  }
+
+  res <- idx_results[[cond]]
+  cat(sprintf("\nMulti-feature index (group = %s): LOFO-CV rho = %.2f\n\n",
+              res$best_grp, res$cv$cv_spearman))
+}
+
+cat("## High-salinity vs low-salinity comparison\n\n")
+div_feats <- comparison_df %>%
+  filter(abs(rho_diff) > 0.10) %>%
+  arrange(desc(abs(rho_diff))) %>%
+  slice_head(n = 5)
+
+cat("Features with most divergent predictive power across salinity conditions:\n\n")
+for (i in seq_len(nrow(div_feats))) {
+  direction <- if (div_feats$rho_diff[i] > 0) {
+    "stronger for high-salinity survival"
+  } else {
+    "stronger for low-salinity survival"
+  }
+  cat(sprintf("- **%s** (%s): rho_high = %.2f, rho_low = %.2f — %s\n",
+              div_feats$feature[i], div_feats$parentage_group[i],
+              div_feats$survival_high_salinity[i],
+              div_feats$survival_low_salinity[i],
+              direction))
+}
+```
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

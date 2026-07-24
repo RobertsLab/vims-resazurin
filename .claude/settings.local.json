@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk -F',' 'NR>1{print $1}' /Users/ashuffmyer/MyProjects/oysters/vims-resazurin/output/metabolism.csv)"
+    ]
+  }
+}

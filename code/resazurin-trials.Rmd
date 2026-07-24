@@ -392,6 +392,13 @@ plot1<-full_data%>%
 ggsave(plot1, filename="figures/trials/individual_trajectories.png", width=10, height=8, units="in")
 ```
 
+Output file for additional analyses. 
+```{r}
+full_data%>%
+  select(date, plate, well, timepoint, family, temperature, phenotype, value, unique)%>%
+  write_csv("output/metabolism.csv")
+```
+
 Run a model on metabolic rates. 
 
 ```{r}

@@ -1,0 +1,623 @@
+---
+title: "resazurin-curve-features-all-experiments"
+author: "Sam White, Ariana Huffmyer"
+date: "2026-07-04"
+output:
+  github_document:
+    toc: true
+    number_sections: true
+  bookdown::html_document2:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    code_download: true
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    code_download: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Background
+
+This notebook applies the curve-feature comparison approach across all
+resazurin experiment-level analyses. It uses the existing
+`metabolism.csv` outputs.
+
+## Expected inputs
+
+| Path | Description |
+|------|-------------|
+| `output/metabolism.csv` | Per-well per-timepoint blank-corrected and size-normalized metabolism data |
+
+## Expected outputs
+
+All outputs are written to
+`output/resazurin-curves/`.
+
+| File | Description |
+|------|-------------|
+| `curve_features.csv` | Per-individual curve traits for every included experiment |
+| `curve_feature_family_summary.csv` | Family-level summaries for each curve trait |
+| `curve_feature_family_stats.csv` | Per-experiment feature ranking by family separation |
+| `curve_feature_pairwise_stats.csv` | Tukey-adjusted family comparisons for top-ranked curve traits |
+| `curve_feature_trajectory_classes.csv` | Trajectory-class counts and proportions by experiment and family |
+| `included_experiments.csv` | Experiment output folders included in the analysis |
+| `figures/` | Cross-experiment ranking, heatmap, best-feature, and trajectory plots |
+
+# Setup
+
+```{r setup}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  comment = "",
+  results = "hold"
+)
+```
+
+```{r libraries}
+library(tidyverse)
+library(colorspace)
+library(here)
+```
+
+# Helper Functions
+
+```{r helper-fns}
+safe_divide <- function(num, den) {
+  if_else(is.finite(num) & is.finite(den) & abs(den) > .Machine$double.eps,
+          num / den, NA_real_)
+}
+
+trapezoid_auc <- function(time_hr, value) {
+  ok <- is.finite(time_hr) & is.finite(value)
+  t <- time_hr[ok]
+  v <- value[ok]
+  if (length(t) < 2) return(NA_real_)
+  ord <- order(t)
+  t <- t[ord]
+  v <- v[ord]
+  sum(diff(t) * (head(v, -1) + tail(v, -1)) / 2)
+}
+
+segment_auc <- function(time_hr, value) {
+  ok <- is.finite(time_hr) & is.finite(value)
+  t <- time_hr[ok]
+  v <- value[ok]
+  if (length(t) < 2) {
+    return(tibble(t_start = numeric(), t_end = numeric(),
+                  t_mid = numeric(), auc = numeric()))
+  }
+  ord <- order(t)
+  t <- t[ord]
+  v <- v[ord]
+  tibble(
+    t_start = head(t, -1),
+    t_end   = tail(t, -1),
+    t_mid   = (head(t, -1) + tail(t, -1)) / 2,
+    auc     = diff(t) * (head(v, -1) + tail(v, -1)) / 2
+  )
+}
+
+classify_trajectory <- function(slopes, slope_tol = 1e-12) {
+  if (length(slopes) == 0 || all(!is.finite(slopes))) return(NA_character_)
+  s <- slopes[is.finite(slopes)]
+  signs <- case_when(
+    s >  slope_tol ~  1L,
+    s < -slope_tol ~ -1L,
+    TRUE           ~  0L
+  )
+  nonzero <- signs[signs != 0L]
+  if (length(nonzero) == 0) return("stable")
+  if (all(nonzero > 0)) return("monotonic_increase")
+  if (all(nonzero < 0)) return("monotonic_decrease")
+  if (any(nonzero > 0) && any(nonzero < 0)) {
+    first_neg <- which(nonzero < 0)[1]
+    first_pos <- which(nonzero > 0)[1]
+    if (first_pos < first_neg) return("rise_then_depress")
+    if (first_neg < first_pos) return("depress_then_recover")
+  }
+  "complex"
+}
+
+extract_curve_features_one <- function(df, value_col, metric_label) {
+  df <- df %>%
+    filter(is.finite(time_hr), is.finite(.data[[value_col]])) %>%
+    arrange(time_hr)
+
+  if (nrow(df) < 2) return(tibble())
+
+  t <- df$time_hr
+  v <- df[[value_col]]
+  dt <- diff(t)
+  dv <- diff(v)
+  valid_slope <- is.finite(dt) & dt > 0 & is.finite(dv)
+  slopes <- dv[valid_slope] / dt[valid_slope]
+  slope_midpoints <- (head(t, -1) + tail(t, -1)) / 2
+  slope_midpoints <- slope_midpoints[valid_slope]
+  seg_auc <- segment_auc(t, v)
+  split_time <- median(seg_auc$t_mid, na.rm = TRUE)
+  early_auc <- seg_auc %>%
+    filter(t_mid <= split_time) %>%
+    summarise(x = sum(auc, na.rm = TRUE), .groups = "drop") %>%
+    pull(x)
+  late_auc <- seg_auc %>%
+    filter(t_mid > split_time) %>%
+    summarise(x = sum(auc, na.rm = TRUE), .groups = "drop") %>%
+    pull(x)
+
+  if (length(early_auc) == 0) early_auc <- NA_real_
+  if (length(late_auc) == 0) late_auc <- NA_real_
+
+  baseline_value <- v[1]
+  final_value <- v[length(v)]
+  peak_idx <- which.max(v)
+  trough_idx <- which.min(v)
+  peak_value <- v[peak_idx]
+  trough_value <- v[trough_idx]
+  peak_after_baseline <- peak_value - baseline_value
+  depression_abs <- if (peak_idx < length(v)) {
+    max(peak_value - final_value, 0, na.rm = TRUE)
+  } else {
+    0
+  }
+
+  vmax_idx <- if (length(slopes) > 0) which.max(slopes) else NA_integer_
+  min_slope_idx <- if (length(slopes) > 0) which.min(slopes) else NA_integer_
+  curvature <- diff(slopes)
+  inflection_idx <- if (length(curvature) > 0) {
+    which.max(abs(curvature)) + 1L
+  } else {
+    NA_integer_
+  }
+
+  tibble(
+    value_metric = metric_label,
+    baseline_value = baseline_value,
+    final_value = final_value,
+    peak_value = peak_value,
+    trough_value = trough_value,
+    time_to_peak = t[peak_idx],
+    time_to_trough = t[trough_idx],
+    auc_total = trapezoid_auc(t, v),
+    auc_early = early_auc,
+    auc_late = late_auc,
+    delta_auc_late_minus_early = late_auc - early_auc,
+    late_early_auc_ratio = safe_divide(late_auc, early_auc),
+    initial_slope = slopes[1],
+    vmax = if (length(slopes) > 0) max(slopes, na.rm = TRUE) else NA_real_,
+    time_to_vmax = if (!is.na(vmax_idx)) slope_midpoints[vmax_idx] else NA_real_,
+    min_slope = if (length(slopes) > 0) min(slopes, na.rm = TRUE) else NA_real_,
+    time_to_min_slope = if (!is.na(min_slope_idx)) {
+      slope_midpoints[min_slope_idx]
+    } else {
+      NA_real_
+    },
+    inflection_time = if (!is.na(inflection_idx)) {
+      slope_midpoints[inflection_idx]
+    } else {
+      NA_real_
+    },
+    metabolic_scope = peak_after_baseline,
+    final_delta = final_value - baseline_value,
+    depression_abs = depression_abs,
+    metabolic_depression_index = safe_divide(depression_abs,
+                                             abs(peak_after_baseline)),
+    resilience_ratio = safe_divide(final_value, peak_value),
+    stability_cv = safe_divide(sd(v, na.rm = TRUE), abs(mean(v, na.rm = TRUE))),
+    trajectory_class = classify_trajectory(slopes),
+    n_timepoints = nrow(df)
+  )
+}
+
+compute_curve_features <- function(df, value_col, metric_label) {
+  id_vars <- intersect(
+    c("trace_id", "family_id_group", "phenotype",
+      "round_group", "cup_id_group", "sample_id_group"),
+    names(df)
+  )
+
+  df %>%
+    filter(!is.na(family_id_group), is.finite(.data[[value_col]])) %>%
+    group_by(across(all_of(id_vars))) %>%
+    group_modify(~ extract_curve_features_one(.x, value_col, metric_label)) %>%
+    ungroup()
+}
+
+tidy_tukey <- function(model, term) {
+  tk <- tryCatch(TukeyHSD(aov(model), which = term)[[term]],
+                 error = function(e) NULL)
+  if (is.null(tk)) return(tibble())
+  as_tibble(tk, rownames = "contrast") %>%
+    rename(
+      estimate = diff,
+      p.value = `p adj`
+    ) %>%
+    mutate(SE = NA_real_, df = NA_real_, t.ratio = NA_real_) %>%
+    select(contrast, estimate, SE, df, t.ratio, p.value)
+}
+
+run_feature_family_stats <- function(df) {
+  df <- df %>%
+    filter(is.finite(feature_value), !is.na(family_id_group)) %>%
+    mutate(family = factor(family_id_group))
+
+  if (nrow(df) < 3 || n_distinct(df$family) < 2) return(tibble())
+
+  model <- lm(feature_value ~ family, data = df)
+  aov_tab <- anova(model)
+
+  ss_family <- aov_tab["family", "Sum Sq"]
+  df_family <- aov_tab["family", "Df"]
+  ms_error <- aov_tab["Residuals", "Mean Sq"]
+  ss_total <- sum(aov_tab$`Sum Sq`, na.rm = TRUE)
+  eta_sq <- ss_family / ss_total
+  omega_sq <- (ss_family - df_family * ms_error) / (ss_total + ms_error)
+
+  fam_means <- df %>%
+    group_by(family) %>%
+    summarise(mean = mean(feature_value), .groups = "drop")
+
+  pair_grid <- tidyr::crossing(fam1 = fam_means$family,
+                               fam2 = fam_means$family) %>%
+    filter(as.character(fam1) < as.character(fam2)) %>%
+    left_join(fam_means, by = c("fam1" = "family")) %>%
+    rename(mean1 = mean) %>%
+    left_join(fam_means, by = c("fam2" = "family")) %>%
+    rename(mean2 = mean) %>%
+    mutate(abs_d = abs(mean1 - mean2) / sqrt(ms_error))
+
+  kw <- kruskal.test(feature_value ~ family, data = df)
+
+  tibble(
+    n = nrow(df),
+    n_family = n_distinct(df$family),
+    f_statistic = aov_tab["family", "F value"],
+    p_value = aov_tab["family", "Pr(>F)"],
+    kruskal_p_value = kw$p.value,
+    eta_sq = eta_sq,
+    omega_sq = max(omega_sq, 0, na.rm = TRUE),
+    max_abs_pairwise_d = max(pair_grid$abs_d, na.rm = TRUE)
+  )
+}
+
+run_feature_pairwise <- function(df) {
+  df <- df %>%
+    filter(is.finite(feature_value), !is.na(family_id_group)) %>%
+    mutate(family = factor(family_id_group))
+
+  if (nrow(df) < 3 || n_distinct(df$family) < 2) return(tibble())
+
+  model <- lm(feature_value ~ family, data = df)
+  tidy_tukey(model, "family")
+}
+
+make_palette <- function(n) {
+  okabe_ito_7 <- c(
+    "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+    "#0072B2", "#D55E00", "#CC79A7"
+  )
+  if (n == 0L) return(character(0))
+  if (n <= length(okabe_ito_7)) return(okabe_ito_7[seq_len(n)])
+  colorspace::qualitative_hcl(n, palette = "Dynamic")
+}
+```
+
+# Load Experiment Outputs
+
+```{r discover-inputs}
+out_dir <- here("output", "resazurin-curves")
+fig_dir <- file.path(out_dir, "figures")
+
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+
+metabolism_path <- here("output", "metabolism.csv")
+stopifnot(file.exists(metabolism_path))
+
+included_experiments <- tibble(
+  metabolism_path = metabolism_path,
+  experiment      = "vims-resazurin"
+)
+
+included_experiments
+```
+
+```{r load-metabolism}
+metabolism_all <- read_csv(
+  metabolism_path,
+  col_types = cols(.default = "c"),
+  show_col_types = FALSE
+) %>%
+  rename(
+    time_hr         = timepoint,
+    family_id_group = family,
+    corrected_fc    = value,
+    trace_id        = unique
+  ) %>%
+  mutate(
+    family_id_group = as.character(family_id_group),
+    across(c("corrected_fc", "time_hr"), ~ suppressWarnings(as.numeric(.x))),
+    trace_id        = as.character(trace_id)
+  )
+
+metabolism_all <- metabolism_all %>%
+  mutate(
+    family_id_group = str_to_lower(trimws(family_id_group)),
+    phenotype       = str_to_lower(trimws(phenotype))
+  )
+
+experiment_overview <- metabolism_all %>%
+  group_by(phenotype) %>%
+  summarise(
+    n_rows        = n(),
+    n_individuals = n_distinct(trace_id),
+    n_families    = n_distinct(family_id_group, na.rm = TRUE),
+    min_time_hr   = min(time_hr, na.rm = TRUE),
+    max_time_hr   = max(time_hr, na.rm = TRUE),
+    n_timepoints  = n_distinct(time_hr),
+    .groups = "drop"
+  )
+
+print(experiment_overview)
+```
+
+# Curve Feature Extraction
+
+```{r curve-features}
+value_metric_cols <- c(
+  corrected_fc = "corrected_fc",
+  setNames(
+    names(metabolism_all)[str_detect(names(metabolism_all),
+                                     "^metabolism_per_")],
+    names(metabolism_all)[str_detect(names(metabolism_all),
+                                     "^metabolism_per_")]
+  )
+)
+value_metric_cols <- value_metric_cols[value_metric_cols %in% names(metabolism_all)]
+
+curve_features <- imap_dfr(
+  value_metric_cols,
+  ~ compute_curve_features(metabolism_all, .x, .y)
+)
+
+numeric_feature_cols <- curve_features %>%
+  select(where(is.numeric)) %>%
+  select(-any_of("n_timepoints")) %>%
+  names()
+
+curve_feature_long <- curve_features %>%
+  pivot_longer(
+    cols = all_of(numeric_feature_cols),
+    names_to = "feature",
+    values_to = "feature_value"
+  ) %>%
+  filter(is.finite(feature_value))
+
+trajectory_features <- curve_features %>%
+  count(phenotype, value_metric, family_id_group, trajectory_class, name = "n") %>%
+  group_by(phenotype, value_metric, family_id_group) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+str(curve_features)
+```
+
+# Family Summaries
+
+```{r family-summary}
+curve_feature_family_summary <- curve_feature_long %>%
+  group_by(phenotype, value_metric, feature, family_id_group) %>%
+  summarise(
+    n = n(),
+    mean = mean(feature_value, na.rm = TRUE),
+    sd = sd(feature_value, na.rm = TRUE),
+    se = sd / sqrt(n),
+    median = median(feature_value, na.rm = TRUE),
+    iqr = IQR(feature_value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(curve_feature_family_summary)
+```
+
+# Rank Family-Discriminating Features
+
+For each experiment and numeric feature, the model
+`feature_value ~ family_id_group` is fit with individual oysters as
+observational units. Features are ranked by a combined score favoring stronger
+family effect size (`eta_sq`) and lower BH-adjusted p-value. This is intended
+as a screening/ranking analysis rather than a single confirmatory model.
+`baseline_value` is retained in the full feature table but excluded from the
+ranking because the goal here is to compare curve shape, capacity,
+responsiveness, and depression-like behavior rather than the normalized
+starting reference.
+
+```{r feature-stats}
+curve_feature_family_stats <- curve_feature_long %>%
+  filter(feature != "baseline_value") %>%
+  group_by(phenotype, value_metric, feature) %>%
+  group_modify(~ run_feature_family_stats(.x)) %>%
+  ungroup() %>%
+  group_by(phenotype, value_metric) %>%
+  mutate(
+    p_adj_bh = p.adjust(p_value, method = "BH"),
+    rank_within_metric = min_rank(p_adj_bh),
+    rank_score = dense_rank(desc(eta_sq)) + dense_rank(p_adj_bh)
+  ) %>%
+  ungroup() %>%
+  arrange(phenotype, p_adj_bh, desc(eta_sq), desc(max_abs_pairwise_d))
+
+best_curve_features <- curve_feature_family_stats %>%
+  group_by(phenotype, value_metric) %>%
+  slice_min(order_by = rank_score, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(phenotype, value_metric)
+
+top_curve_features <- curve_feature_family_stats %>%
+  group_by(phenotype, value_metric) %>%
+  slice_min(order_by = rank_score, n = 5, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(phenotype, value_metric, rank_score)
+
+print(best_curve_features)
+```
+
+```{r pairwise-stats}
+curve_feature_pairwise_stats <- curve_feature_long %>%
+  semi_join(top_curve_features, by = c("phenotype", "value_metric", "feature")) %>%
+  group_by(phenotype, value_metric, feature) %>%
+  group_modify(~ run_feature_pairwise(.x)) %>%
+  ungroup()
+
+print(curve_feature_pairwise_stats)
+```
+
+# Most Distinguishing Aspects
+
+```{r best-feature-print, results='asis'}
+cat("## Best curve feature per experiment and metric\n\n")
+cat(knitr::kable(best_curve_features, digits = 5, format = "pipe"), sep = "\n")
+cat("\n\n## Top five curve features per experiment and metric\n\n")
+cat(knitr::kable(top_curve_features, digits = 5, format = "pipe"), sep = "\n")
+```
+
+```{r feature-rank-plot, fig.width=12, fig.height=10}
+rank_plot_df <- curve_feature_family_stats %>%
+  group_by(phenotype, value_metric) %>%
+  slice_max(order_by = eta_sq, n = 8, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(feature = fct_reorder(feature, eta_sq))
+
+p_feature_rank <- ggplot(rank_plot_df,
+    aes(x = eta_sq, y = feature, fill = p_adj_bh < 0.05)) +
+  geom_col(width = 0.75) +
+  facet_grid(value_metric ~ phenotype, scales = "free", space = "free_x") +
+  scale_fill_manual(values = c("FALSE" = "grey70", "TRUE" = "#0072B2"),
+                    name = "BH-adjusted p < 0.05") +
+  labs(x = "Family effect size (eta-squared)", y = "Curve feature") +
+  theme_classic(base_size = 10) +
+  theme(strip.text.x = element_text(angle = 35, hjust = 0))
+
+p_feature_rank
+ggsave(file.path(fig_dir, "curve_feature_family_effect_ranking.png"),
+       p_feature_rank, width = 12, height = 10)
+```
+
+```{r best-feature-boxplots, fig.width=12, fig.height=10}
+best_plot_df <- curve_feature_long %>%
+  semi_join(best_curve_features,
+            by = c("phenotype", "value_metric", "feature")) %>%
+  mutate(
+    family_id_group = factor(
+      family_id_group,
+      levels = str_sort(unique(family_id_group), numeric = TRUE)
+    ),
+    panel_label = paste(phenotype, value_metric, feature, sep = "\n")
+  )
+
+family_levels <- levels(best_plot_df$family_id_group)
+family_colours <- setNames(make_palette(length(family_levels)), family_levels)
+
+p_best_features <- ggplot(best_plot_df,
+    aes(x = family_id_group, y = feature_value, fill = family_id_group)) +
+  geom_boxplot(alpha = 0.65, outlier.shape = NA) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.1) +
+  facet_wrap(~ panel_label, scales = "free", ncol = 2) +
+  scale_fill_manual(values = family_colours, guide = "none") +
+  labs(x = "Family", y = "Feature value") +
+  theme_classic(base_size = 10) +
+  theme(strip.text = element_text(size = 8))
+
+p_best_features
+ggsave(file.path(fig_dir, "curve_feature_best_family_boxplots.png"),
+       p_best_features, width = 12, height = 10)
+```
+
+```{r feature-heatmap, fig.width=12, fig.height=10}
+heatmap_features <- curve_feature_family_stats %>%
+  group_by(phenotype, value_metric) %>%
+  slice_max(order_by = eta_sq, n = 5, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(phenotype, value_metric, feature)
+
+curve_feature_heatmap_df <- curve_feature_family_summary %>%
+  semi_join(heatmap_features, by = c("phenotype", "value_metric", "feature")) %>%
+  group_by(phenotype, value_metric, feature) %>%
+  mutate(mean_z = as.numeric(scale(mean))) %>%
+  ungroup() %>%
+  mutate(
+    feature_label = paste(value_metric, feature, sep = " | "),
+    family_id_group = factor(
+      family_id_group,
+      levels = str_sort(unique(family_id_group), numeric = TRUE)
+    )
+  )
+
+p_feature_heatmap <- ggplot(curve_feature_heatmap_df,
+    aes(x = family_id_group, y = feature_label, fill = mean_z)) +
+  geom_tile(colour = "white", linewidth = 0.25) +
+  facet_wrap(~ phenotype, scales = "free", ncol = 2) +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+                       midpoint = 0, name = "Family mean z") +
+  labs(x = "Family", y = "Curve feature") +
+  theme_classic(base_size = 9) +
+  theme(axis.text.y = element_text(size = 6))
+
+p_feature_heatmap
+ggsave(file.path(fig_dir, "curve_feature_family_mean_heatmap.png"),
+       p_feature_heatmap, width = 12, height = 10)
+```
+
+```{r trajectory-class-plot, fig.width=12, fig.height=9}
+trajectory_plot_df <- trajectory_features %>%
+  mutate(
+    family_id_group = factor(
+      family_id_group,
+      levels = str_sort(unique(family_id_group), numeric = TRUE)
+    )
+  )
+
+p_trajectory <- ggplot(trajectory_plot_df,
+    aes(x = family_id_group, y = prop, fill = trajectory_class)) +
+  geom_col(position = "stack", colour = "white", linewidth = 0.2) +
+  facet_grid(value_metric ~ phenotype, scales = "free_x", space = "free_x") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Family", y = "Individuals", fill = "Trajectory class") +
+  theme_classic(base_size = 9) +
+  theme(strip.text.x = element_text(angle = 35, hjust = 0))
+
+p_trajectory
+ggsave(file.path(fig_dir, "curve_feature_trajectory_classes.png"),
+       p_trajectory, width = 12, height = 9)
+```
+
+# Save Outputs
+
+```{r save-outputs}
+write_csv(included_experiments,
+          file.path(out_dir, "included_experiments.csv"))
+write_csv(experiment_overview,
+          file.path(out_dir, "experiment_overview.csv"))
+write_csv(curve_features,
+          file.path(out_dir, "curve_features.csv"))
+write_csv(curve_feature_family_summary,
+          file.path(out_dir, "curve_feature_family_summary.csv"))
+write_csv(curve_feature_family_stats,
+          file.path(out_dir, "curve_feature_family_stats.csv"))
+write_csv(curve_feature_pairwise_stats,
+          file.path(out_dir, "curve_feature_pairwise_stats.csv"))
+write_csv(trajectory_features,
+          file.path(out_dir, "curve_feature_trajectory_classes.csv"))
+
+message("Output files written to: ", out_dir)
+```

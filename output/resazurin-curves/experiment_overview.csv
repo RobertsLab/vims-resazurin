@@ -1,0 +1,3 @@
+phenotype,n_rows,n_individuals,n_families,min_time_hr,max_time_hr,n_timepoints
+high-salinity,3190,638,25,0,4,5
+low-salinity,3085,617,25,0,4,5
