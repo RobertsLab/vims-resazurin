@@ -491,3 +491,12 @@ plot14<-ggplot(full_data, aes(x = value, y = as.factor(timepoint), fill = ploidy
   labs(title = "Distribution of Fluorescence by Ploidy")+
   theme_classic();plot14
 ```
+
+# Output file
+
+Output file for additional analyses. 
+```{r}
+full_data%>%
+  select(date, plate, well, timepoint, family, ploidy, value, unique)%>%
+  write_csv("output/ploidy/ploidy_metabolism.csv")
+```

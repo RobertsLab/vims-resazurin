@@ -1,0 +1,114 @@
+---
+title: "resazurin-ploidy-field-phenotype-prediction"
+author: "Ariana Huffmyer"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  github_document:
+    toc: true
+    number_sections: true
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    code_download: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Background
+
+**Question:** *How well can a resazurin metabolic assay predict the survival phenotype of an oyster family, and do the same metabolic features predict performance under high-salinity vs low-salinity conditions?*
+
+Two independent datasets describe the same 48 families:
+
+1. **Survival phenotypes** — `data/ploidy/field/ploidy_field_performance.xlsx` records each
+   ploidy's observed performance. 
+   
+- Definitions: 
+
+    - SH is shell height (longest measure)
+    - SL is shell length (across the ‘fan’)
+    - SW is shell width (typically the shortest dimension)
+    - Fan is SL/SH
+    - Cup is SW/SH
+    - WWW is whole wet weight
+    - DSW is dry shell weight
+    - DTW is dry tissue weight
+    - CI is condition index and we use 100 x DTW/(WWW-DSW)
+
+2. **Metabolic curve features** — `output/ploidy/resazurin-curves/curve_features.csv`
+   contains ~25 curve shape/capacity/rate traits per individual extracted from
+   resazurin assay timecourses (AUC, Vmax, metabolic scope, depression index,
+   resilience ratio, trajectory class, etc.).
+
+## Expected inputs
+
+| Path | Description |
+|------|-------------|
+| `output/ploidy/resazurin-curves/curve_features.csv` | Per-individual curve traits |
+| `data/ploidy/field/ploidy/field_performance.xlsx` | Ploidy performance |
+
+## Expected outputs
+
+All written to `output/ploidy/resazurin-prediction/`.
+
+| File | Description |
+|------|-------------|
+| `family_feature_matrix.csv` | Ploidy-mean resazurin features by parentage group |
+| `feature_phenotype_correlations.csv` | Spearman/Pearson correlations for all features |
+| `top_predictors.csv` | Best-correlated features for each survival condition |
+| `lofo_cv_performance.csv` | LOFO-CV performance for candidate predictors |
+| `resazurin_index_predictions.csv` | Per-family observed vs predicted for composite index |
+| `figures/` | Correlation ranking, comparison scatter, best-predictor, index, heatmap |
+
+# Setup
+
+```{r setup}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  comment = "",
+  results = "hold"
+)
+```
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+library(here)
+library(ggrepel)
+library(cowplot)
+```
+
+```{r paths}
+resazurin_features_path <- here("output/ploidy", "resazurin-curves", "curve_features.csv")
+phenotype_path          <- here("data/ploidy/field", "ploidy_field_performance.xlsx")
+
+out_dir <- here("output/ploidy", "resazurin-prediction")
+fig_dir <- file.path(out_dir, "figures/ploidy")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+
+stopifnot(file.exists(resazurin_features_path), file.exists(phenotype_path))
+```
+
+# Load the survival phenotype
+
+```{r load-phenotype}
+phenotype <- read_excel(phenotype_path)%>%filter(!is.na(shell_height))%>%filter(live_dead_sampling=="L")
+
+cat("Samples with phenotype data:", nrow(phenotype), "\n")
+phenotype
+```
+
+# Load resazurin curve features
+
+```{r load-resazurin}
+resazurin <- read_csv(resazurin_features_path, show_col_types = FALSE)
+
+cat("Ploidies in resazurin data:    ", n_distinct(resazurin$ploidy), "\n")
+```
+

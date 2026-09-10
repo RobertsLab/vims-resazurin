@@ -1,5 +1,5 @@
 ---
-title: "resazurin-family-phenotype-prediction"
+title: "resazurin-ploidy-field-phenotype-prediction"
 author: "Ariana Huffmyer"
 date: "`r format(Sys.time(), '%Y-%m-%d')`"
 output:
@@ -19,43 +19,45 @@ editor_options:
 
 # Background
 
-**Question:** *How well can a resazurin metabolic assay predict the survival
-phenotype of an oyster family, and do the same metabolic features predict
-performance under high-salinity vs low-salinity conditions?*
+**Question:** *How well can a resazurin metabolic assay predict the survival phenotype of an oyster family, and do the same metabolic features predict performance under high-salinity vs low-salinity conditions?*
 
 Two independent datasets describe the same 48 families:
 
-1. **Survival phenotypes** — `data/predicted_performance.xlsx` records each
-   family's observed survival proportion under both high-salinity
-   (`survival-high-salinity`) and low-salinity (`survival-low-salinity`)
-   conditions, along with family rankings within each condition
-   (`rank-survival-high-salinity`, `rank-survival-low-salinity`; 1 = best).
-   Families span two parentage groups: high-salinity and low-salinity origin.
+1. **Survival phenotypes** — `data/ploidy/field/ploidy_field_performance.xlsx` records each
+   ploidy's observed performance. 
+   
+- Definitions: 
 
-2. **Metabolic curve features** — `output/resazurin-curves/curve_features.csv`
+    - SH is shell height (longest measure)
+    - SL is shell length (across the ‘fan’)
+    - SW is shell width (typically the shortest dimension)
+    - Fan is SL/SH
+    - Cup is SW/SH
+    - WWW is whole wet weight
+    - DSW is dry shell weight
+    - DTW is dry tissue weight
+    - CI is condition index and we use 100 x DTW/(WWW-DSW)
+
+2. **Metabolic curve features** — `output/ploidy/resazurin-curves/curve_features.csv`
    contains ~25 curve shape/capacity/rate traits per individual extracted from
    resazurin assay timecourses (AUC, Vmax, metabolic scope, depression index,
    resilience ratio, trajectory class, etc.).
-
-We ask (a) which resazurin curve features predict survival under each salinity
-condition, and (b) whether different features predict performance under the two
-conditions, which would reveal condition-specific metabolic signals.
 
 ## Expected inputs
 
 | Path | Description |
 |------|-------------|
-| `output/resazurin-curves/curve_features.csv` | Per-individual curve traits |
-| `data/predicted_performance.xlsx` | Family survival proportions and rankings |
+| `output/ploidy/resazurin-curves/curve_features.csv` | Per-individual curve traits |
+| `data/ploidy/field/ploidy/field_performance.xlsx` | Ploidy performance |
 
 ## Expected outputs
 
-All written to `output/resazurin-prediction/`.
+All written to `output/ploidy/resazurin-prediction/`.
 
 | File | Description |
 |------|-------------|
-| `family_feature_matrix.csv` | Family-mean resazurin features by parentage group |
-| `feature_phenotype_correlations.csv` | Spearman/Pearson correlations for all features × phenotypes |
+| `family_feature_matrix.csv` | Ploidy-mean resazurin features by parentage group |
+| `feature_phenotype_correlations.csv` | Spearman/Pearson correlations for all features |
 | `top_predictors.csv` | Best-correlated features for each survival condition |
 | `lofo_cv_performance.csv` | LOFO-CV performance for candidate predictors |
 | `resazurin_index_predictions.csv` | Per-family observed vs predicted for composite index |
@@ -83,94 +85,63 @@ library(cowplot)
 ```
 
 ```{r paths}
-resazurin_features_path <- here("output", "resazurin-curves", "curve_features.csv")
-phenotype_path          <- here("data", "predicted_performance.xlsx")
+resazurin_features_path <- here("output/ploidy", "resazurin-curves", "curve_features.csv")
+phenotype_path          <- here("data/ploidy/field", "ploidy_field_performance.xlsx")
 
-out_dir <- here("output", "resazurin-prediction")
-fig_dir <- file.path(out_dir, "figures")
+out_dir <- here("output/ploidy", "resazurin-prediction")
+fig_dir <- file.path(out_dir, "figures/ploidy")
 dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
 stopifnot(file.exists(resazurin_features_path), file.exists(phenotype_path))
-
-# The two primary survival conditions analysed in parallel
-PRIMARY_PHENOTYPES <- c("survival_high_salinity", "survival_low_salinity")
-PHENOTYPE_LABELS   <- c(
-  survival_high_salinity = "High-salinity survival",
-  survival_low_salinity  = "Low-salinity survival"
-)
 ```
 
 # Load the survival phenotype
 
-Both survival proportions (0–1, higher = better) are the primary phenotypes.
-Family ranks (1 = best within condition) are retained as secondary variables.
-
 ```{r load-phenotype}
-phenotype <- read_excel(phenotype_path) %>%
-  transmute(
-    family                       = as.character(family),
-    survival_high_salinity       = `survival-high-salinity`,
-    survival_low_salinity        = `survival-low-salinity`,
-    rank_survival_high_salinity  = `rank-survival-high-salinity`,
-    rank_survival_low_salinity   = `rank-survival-low-salinity`
-  )
+phenotype <- read_excel(phenotype_path)%>%filter(!is.na(shell_height))%>%filter(live_dead_sampling=="L")
 
-cat("Families with phenotype data:", nrow(phenotype), "\n")
-cat("High-salinity survival range:",
-    round(range(phenotype$survival_high_salinity), 3), "\n")
-cat("Low-salinity survival range:",
-    round(range(phenotype$survival_low_salinity), 3), "\n")
+cat("Samples with phenotype data:", nrow(phenotype), "\n")
 phenotype
 ```
 
 # Load resazurin curve features
 
 ```{r load-resazurin}
-resazurin_raw <- read_csv(resazurin_features_path, show_col_types = FALSE) %>%
-  rename(parentage_group = phenotype) %>%
-  mutate(family = str_to_lower(trimws(as.character(family_id_group))))
+resazurin <- read_csv(resazurin_features_path, show_col_types = FALSE)
 
-resazurin <- resazurin_raw %>%
-  filter(family %in% phenotype$family)
-
-cat("Families in resazurin data:    ", n_distinct(resazurin_raw$family), "\n")
-cat("Families matched to phenotype: ", n_distinct(resazurin$family), "\n")
-cat("Parentage groups:              ",
-    paste(sort(unique(resazurin$parentage_group)), collapse = ", "), "\n")
-cat("Value metrics:                 ",
-    paste(sort(unique(resazurin$value_metric)), collapse = ", "), "\n")
+cat("Ploidies in resazurin data:    ", n_distinct(resazurin$ploidy), "\n")
 ```
 
-# Build the family-level feature matrix
+# Build the ploidy-level feature matrix
 
 ```{r feature-matrix}
 feature_cols <- resazurin %>%
   select(where(is.numeric)) %>%
-  select(-any_of(c("n_timepoints", "family_id_group"))) %>%
+  select(-any_of(c("n_timepoints", "ploidy"))) %>%
   names()
 feature_cols <- setdiff(feature_cols, "baseline_value")
 
 family_feature_long <- resazurin %>%
-  select(parentage_group, value_metric, family, all_of(feature_cols)) %>%
+  select(ploidy, value_metric, all_of(feature_cols)) %>%
   pivot_longer(all_of(feature_cols),
                names_to = "feature", values_to = "value") %>%
   filter(is.finite(value)) %>%
-  bind_rows({.} %>% mutate(parentage_group = "all")) %>%
-  group_by(parentage_group, value_metric, feature, family) %>%
+  bind_rows({.} %>% mutate(ploidy = "all")) %>%
+  group_by(ploidy, value_metric, feature) %>%
   summarise(
     n_indiv     = n(),
-    family_mean = mean(value, na.rm = TRUE),
+    ploidy_mean = mean(value, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  group_by(parentage_group, value_metric, feature) %>%
-  filter(n_distinct(family) >= 7) %>%
+  group_by(ploidy, value_metric, feature) %>%
+  #filter(n_distinct(family) >= 7) %>%
   ungroup()
 
-write_csv(family_feature_long, file.path(out_dir, "family_feature_matrix.csv"))
+write_csv(family_feature_long, file.path(out_dir, "ploidy_feature_matrix.csv"))
 
 family_feature_long %>%
-  count(parentage_group, value_metric, name = "n_feature_rows") %>%
-  arrange(parentage_group, value_metric)
+  count(ploidy, value_metric, name = "n_feature_rows") %>%
+  arrange(ploidy, value_metric)
 ```
 
 # Screen: correlate each feature with survival phenotypes

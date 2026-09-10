@@ -1,0 +1,425 @@
+---
+title: "resazurin-ploidy-field-phenotype-prediction"
+author: "Ariana Huffmyer"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  github_document:
+    toc: true
+    number_sections: true
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    code_download: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Background
+
+Two independent datasets describe the same set of diploid and triploid oysters:
+
+1. **Survival phenotypes** — `data/ploidy/field/ploidy_field_performance.xlsx` records each
+   ploidy's observed performance. 
+   
+- Definitions: 
+
+    - SH is shell height (longest measure)
+    - SL is shell length (across the ‘fan’)
+    - SW is shell width (typically the shortest dimension)
+    - Fan is SL/SH
+    - Cup is SW/SH
+    - WWW is whole wet weight
+    - DSW is dry shell weight
+    - DTW is dry tissue weight
+    - CI is condition index and we use 100 x DTW/(WWW-DSW)
+
+2. **Metabolic curve features** — `output/ploidy/resazurin-curves/curve_features.csv`
+   contains ~25 curve shape/capacity/rate traits per individual extracted from
+   resazurin assay timecourses (AUC, Vmax, metabolic scope, depression index,
+   resilience ratio, trajectory class, etc.).
+
+## Expected inputs
+
+| Path | Description |
+|------|-------------|
+| `output/ploidy/resazurin-curves/curve_features.csv` | Per-individual curve traits |
+| `data/ploidy/field/ploidy/field_performance.xlsx` | Ploidy performance |
+
+## Expected outputs
+
+All written to `output/ploidy/resazurin-prediction/`.
+
+| File | Description |
+|------|-------------|
+| `family_feature_matrix.csv` | Ploidy-mean resazurin features by parentage group |
+| `feature_phenotype_correlations.csv` | Spearman/Pearson correlations for all features |
+| `top_predictors.csv` | Best-correlated features for each survival condition |
+| `lofo_cv_performance.csv` | LOFO-CV performance for candidate predictors |
+| `resazurin_index_predictions.csv` | Per-family observed vs predicted for composite index |
+| `figures/` | Correlation ranking, comparison scatter, best-predictor, index, heatmap |
+
+# Setup
+
+```{r setup}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  comment = "",
+  results = "hold"
+)
+```
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+library(here)
+library(ggrepel)
+library(cowplot)
+```
+
+```{r paths}
+resazurin_features_path <- here("output/ploidy", "resazurin-curves", "curve_features.csv")
+phenotype_path          <- here("data/ploidy/field", "ploidy_field_performance.xlsx")
+
+out_dir <- here("output/ploidy", "resazurin-prediction")
+fig_dir <- file.path(out_dir, "figures/ploidy")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+
+stopifnot(file.exists(resazurin_features_path), file.exists(phenotype_path))
+```
+
+# Load the survival phenotype
+
+```{r load-phenotype}
+phenotype <- read_excel(phenotype_path)%>%filter(!is.na(shell_height))%>%filter(live_dead_sampling=="L")
+
+cat("Samples with phenotype data:", nrow(phenotype), "\n")
+phenotype
+```
+
+# Load resazurin curve features
+
+```{r load-resazurin}
+resazurin <- read_csv(resazurin_features_path, show_col_types = FALSE)
+
+cat("Ploidies in resazurin data:    ", n_distinct(resazurin$ploidy), "\n")
+```
+
+# Join Resazurin and Field Performance Data
+
+Build a join key from the performance data matching the `trace_id` format in
+the curve features (`"YYYYMMDD plate# WELL"`), then merge at the individual
+level.
+
+```{r join-data}
+# Performance metrics to correlate
+perf_metrics <- c("shell_height", "shell_length", "shell_width",
+                  "cup", "fan", "whole_wet_weight",
+                  "dry_tissue_weight", "condition_index")
+
+# Resazurin curve feature columns (numeric, excluding bookkeeping)
+feature_cols <- resazurin %>%
+  select(where(is.numeric)) %>%
+  select(-any_of("n_timepoints")) %>%
+  names()
+feature_cols <- setdiff(feature_cols, "baseline_value")
+
+# Build trace_id in the performance data to match curve_features format
+performance_clean <- phenotype %>%
+  mutate(
+    trace_id = paste(date, plate, well),
+    family   = str_to_lower(family),
+    ploidy   = str_to_lower(ploidy)
+  )
+
+# Inner-join on trace_id — keeps only individuals present in both datasets
+joined <- resazurin %>%
+  select(trace_id, family_id_group, ploidy, value_metric,
+         all_of(feature_cols)) %>%
+  inner_join(
+    performance_clean %>% select(trace_id, all_of(perf_metrics)),
+    by = "trace_id"
+  )
+
+cat("Individuals matched:", nrow(joined), "\n")
+cat("\nCounts by ploidy x value_metric:\n")
+count(joined, ploidy, value_metric) %>% print()
+
+joined<-joined%>%mutate(shell_width=as.numeric(shell_width))
+
+write_csv(joined, file.path(out_dir, "joined_resazurin_performance.csv"))
+```
+
+# Correlate Resazurin Features with Field Performance
+
+Spearman ρ (rank-based) is the primary statistic; Pearson *r* is reported
+alongside. Correlations are computed for every combination of
+ploidy × value_metric × resazurin feature × performance metric.
+P-values are BH-adjusted within each ploidy × value_metric stratum.
+
+```{r correlations}
+cor_one <- function(x, y) {
+  ok   <- is.finite(x) & is.finite(y)
+  n_ok <- sum(ok)
+  if (n_ok < 5 || sd(x[ok]) == 0 || sd(y[ok]) == 0) {
+    return(tibble(n = n_ok,
+                  spearman_rho = NA_real_, spearman_p = NA_real_,
+                  pearson_r    = NA_real_, pearson_p  = NA_real_))
+  }
+  sp <- suppressWarnings(cor.test(x[ok], y[ok], method = "spearman"))
+  pe <- suppressWarnings(cor.test(x[ok], y[ok], method = "pearson"))
+  tibble(n            = n_ok,
+         spearman_rho = unname(sp$estimate),
+         spearman_p   = sp$p.value,
+         pearson_r    = unname(pe$estimate),
+         pearson_p    = pe$p.value)
+}
+
+# Long format: one row per individual x feature x perf_metric combination
+joined_long <- joined %>%
+  pivot_longer(all_of(feature_cols),
+               names_to  = "feature",
+               values_to = "feature_value") %>%
+  pivot_longer(all_of(perf_metrics),
+               names_to  = "perf_metric",
+               values_to = "perf_value")
+
+# Correlations — extract vectors inside group_modify to avoid scoping issues
+correlations <- joined_long %>%
+  filter(is.finite(feature_value), is.finite(perf_value)) %>%
+  group_by(ploidy, value_metric, feature, perf_metric) %>%
+  group_modify(~ cor_one(.x$feature_value, .x$perf_value)) %>%
+  ungroup() %>%
+  group_by(ploidy, value_metric) %>%
+  mutate(p_adj_bh = p.adjust(spearman_p, method = "BH")) %>%
+  ungroup() %>%
+  arrange(ploidy, value_metric, desc(abs(spearman_rho)))
+
+write_csv(correlations, file.path(out_dir, "individual_correlations.csv"))
+
+cat("Total correlations computed:", nrow(correlations), "\n")
+cat("Significant (BH adj-p < 0.05):",
+    sum(correlations$p_adj_bh < 0.05, na.rm = TRUE), "\n\n")
+
+# Top 5 per ploidy x value_metric
+correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  group_by(ploidy, value_metric) %>%
+  slice_max(abs(spearman_rho), n = 5, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(ploidy, value_metric, feature, perf_metric,
+         n, spearman_rho, spearman_p, p_adj_bh) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4))) %>%
+  print(n = 40)
+```
+
+# Correlation Heatmap
+
+Heatmap of Spearman ρ for every resazurin feature × performance metric pair,
+faceted by ploidy and value metric. Significance stars use BH-adjusted p-values.
+
+```{r cor-heatmap, fig.width=14, fig.height=12}
+heatmap_df <- correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  mutate(
+    sig_label = case_when(
+      spearman_p < 0.001 ~ "***",
+      spearman_p < 0.01  ~ "**",
+      spearman_p < 0.05  ~ "*",
+      TRUE             ~ ""
+    )
+  )
+
+p_heatmap <- ggplot(heatmap_df,
+    aes(x = perf_metric, y = feature, fill = spearman_rho)) +
+  geom_tile(colour = "white", linewidth = 0.3) +
+  geom_text(aes(label = sig_label), size = 2.8, colour = "black") +
+  facet_grid(value_metric ~ ploidy) +
+  scale_fill_gradient2(
+    low      = "#2166AC",
+    mid      = "white",
+    high     = "#B2182B",
+    midpoint = 0,
+    limits   = c(-1, 1),
+    name     = "Spearman\nrho"
+  ) +
+  labs(
+    x       = "Field performance metric",
+    y       = "Resazurin curve feature",
+    title   = "Resazurin feature vs field performance correlations by ploidy",
+    caption = "* Spearman p < 0.05  ** < 0.01  *** < 0.001"
+  ) +
+  theme_classic(base_size = 9) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 7),
+    strip.text  = element_text(size = 9)
+  )
+
+p_heatmap
+ggsave(file.path(fig_dir, "resazurin_performance_heatmap.png"),
+       p_heatmap, width = 14, height = 12)
+```
+
+# Correlation Ranking Plot
+
+Top 8 resazurin features by |ρ| for each performance metric, split by ploidy.
+
+```{r cor-ranking-plot, fig.width=14, fig.height=10}
+rank_df <- correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  group_by(ploidy, value_metric, perf_metric) %>%
+  slice_max(abs(spearman_rho), n = 8, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(
+    feature = reorder(feature, abs(spearman_rho)),
+    sig     = spearman_p < 0.05
+  )
+
+p_rank <- ggplot(rank_df,
+    aes(x = spearman_rho, y = feature, fill = sig)) +
+  geom_col(width = 0.75) +
+  geom_vline(xintercept = 0, linewidth = 0.3) +
+  facet_grid(perf_metric ~ ploidy + value_metric, scales = "free_y") +
+  scale_fill_manual(
+    values = c("FALSE" = "grey70", "TRUE" = "#0072B2"),
+    name   = "Spearman p < 0.05"
+  ) +
+  labs(
+    x     = "Spearman rho",
+    y     = "Resazurin curve feature",
+    title = "Top resazurin features correlated with each field performance metric"
+  ) +
+  theme_classic(base_size = 9) +
+  theme(strip.text = element_text(size = 7))
+
+p_rank
+ggsave(file.path(fig_dir, "resazurin_performance_ranking.png"),
+       p_rank, width = 14, height = 10)
+```
+
+# Scatter Plots: Top Correlations per Ploidy
+
+Top 4 feature × performance metric pairs per ploidy × value_metric, with
+individual data points and linear trend.
+
+```{r top-scatter, fig.width=14, fig.height=10}
+top_pairs <- correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  group_by(ploidy, value_metric) %>%
+  slice_max(abs(spearman_rho), n = 4, with_ties = FALSE) %>%
+  ungroup()
+
+scatter_df <- joined_long %>%
+  inner_join(
+    top_pairs %>% select(ploidy, value_metric, feature, perf_metric,
+                         spearman_rho, spearman_p),
+    by = c("ploidy", "value_metric", "feature", "perf_metric")
+  ) %>%
+  filter(is.finite(feature_value), is.finite(perf_value)) %>%
+  mutate(
+    panel_label = sprintf("%s ~ %s\n%s | %s  rho=%.2f",
+                          feature, perf_metric, ploidy,
+                          value_metric, spearman_rho)
+  )
+
+p_scatter <- ggplot(scatter_df,
+    aes(x = feature_value, y = perf_value, colour = ploidy)) +
+  geom_point(alpha = 0.6, size = 1.8) +
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.15, linewidth = 0.8) +
+  facet_wrap(~ panel_label, scales = "free", ncol = 4) +
+  scale_colour_manual(
+    values = c("diploid"  = "#0072B2",
+               "triploid" = "#D55E00"),
+    name   = "Ploidy"
+  ) +
+  labs(
+    x     = "Resazurin feature value",
+    y     = "Field performance metric value",
+    title = "Top resazurin–performance correlations (individual level)"
+  ) +
+  theme_classic(base_size = 9) +
+  theme(strip.text = element_text(size = 7))
+
+p_scatter
+ggsave(file.path(fig_dir, "top_correlation_scatter.png"),
+       p_scatter, width = 14, height = 10)
+```
+
+# Diploid vs Triploid Comparison
+
+Do the same resazurin features predict field performance in both ploidies, or
+does predictive power diverge? Points off the diagonal predict one ploidy much
+better than the other.
+
+```{r ploidy-comparison-plot, fig.width=10, fig.height=8}
+ploidy_wide <- correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  select(ploidy, value_metric, feature, perf_metric, spearman_rho) %>%
+  pivot_wider(names_from = ploidy, values_from = spearman_rho) %>%
+  filter(is.finite(diploid), is.finite(triploid)) %>%
+  mutate(
+    rho_diff    = triploid - diploid,
+    abs_max     = pmax(abs(diploid), abs(triploid)),
+    label_feat  = if_else(abs_max > 0.3 | abs(rho_diff) > 0.2,
+                          paste(feature, perf_metric, sep = "\n"),
+                          NA_character_)
+  )
+
+p_ploidy_compare <- ggplot(ploidy_wide,
+    aes(x = diploid, y = triploid, colour = perf_metric)) +
+  geom_abline(slope = 1, intercept = 0,
+              linetype = "dashed", colour = "grey50", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linewidth = 0.25, colour = "grey70") +
+  geom_vline(xintercept = 0, linewidth = 0.25, colour = "grey70") +
+  geom_point(size = 2.2, alpha = 0.75) +
+  ggrepel::geom_text_repel(aes(label = label_feat),
+                            size = 2.8, max.overlaps = 15,
+                            show.legend = FALSE, na.rm = TRUE) +
+  facet_wrap(~ value_metric) +
+  labs(
+    x        = "Spearman rho (diploid)",
+    y        = "Spearman rho (triploid)",
+    colour   = "Performance metric",
+    title    = "Resazurin predictive power: diploid vs triploid",
+    subtitle = "Points on the diagonal predict both ploidies equally"
+  ) +
+  theme_classic(base_size = 11)
+
+p_ploidy_compare
+ggsave(file.path(fig_dir, "diploid_vs_triploid_correlation_comparison.png"),
+       p_ploidy_compare, width = 10, height = 8)
+```
+
+# Significant Correlations Summary
+
+```{r sig-summary, results='asis'}
+sig_table <- correlations %>%
+  filter(spearman_p < 0.05, is.finite(spearman_rho)) %>%
+  arrange(ploidy, desc(abs(spearman_rho))) %>%
+  transmute(
+    ploidy, value_metric, feature, perf_metric, n,
+    spearman_rho = round(spearman_rho, 3),
+    spearman_p   = signif(spearman_p, 3),
+    p_adj_bh     = signif(p_adj_bh, 3)
+  )
+
+cat("## Significant correlations (BH-adjusted p < 0.05)\n\n")
+
+if (nrow(sig_table) == 0) {
+  cat("No significant correlations found at this threshold.\n\n")
+} else {
+  cat(knitr::kable(sig_table, format = "pipe"), sep = "\n")
+}
+```
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```

@@ -1,0 +1,5 @@
+ploidy,value_metric,family_id_group,trajectory_class,n,prop
+diploid,corrected_fc,hnry,monotonic_increase,49,0.5903614457831325
+diploid,corrected_fc,hnry,rise_then_depress,34,0.40963855421686746
+triploid,corrected_fc,hnry,monotonic_increase,43,0.5308641975308642
+triploid,corrected_fc,hnry,rise_then_depress,38,0.4691358024691358

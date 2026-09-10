@@ -1,0 +1,6 @@
+value_metric,feature,contrast,estimate,SE,df,t.ratio,p.value
+corrected_fc,delta_auc_late_minus_early,triploid-diploid,-0.15159994165381985,NA,NA,NA,0.024120670964177804
+corrected_fc,final_delta,triploid-diploid,-0.1037422579215489,NA,NA,NA,0.059588853039258205
+corrected_fc,final_value,triploid-diploid,-0.1037422579215489,NA,NA,NA,0.059588853039258205
+corrected_fc,metabolic_scope,triploid-diploid,-0.11269294668375718,NA,NA,NA,0.05098552630604092
+corrected_fc,peak_value,triploid-diploid,-0.11269294668375718,NA,NA,NA,0.05098552630604092
