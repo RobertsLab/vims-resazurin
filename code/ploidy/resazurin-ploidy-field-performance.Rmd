@@ -218,6 +218,93 @@ correlations %>%
   print(n = 40)
 ```
 
+# Leave-One-Individual-Out Cross-Validation
+
+For each top candidate predictor (top 3 by |ρ| within each
+ploidy × value_metric × performance-metric stratum), a linear model is fit
+on n−1 individuals and the held-out individual is predicted. This
+leave-one-individual-out CV (LOIO-CV) tests whether the correlation
+between a resazurin feature and field performance generalises beyond the
+training individuals. CV Spearman ρ and RMSE summarise predictive accuracy.
+
+```{r loio-fn}
+# LOIO-CV for a single feature x perf_metric pair
+# df must have columns: x (resazurin feature value), y (performance value)
+loio_cv <- function(df) {
+  df <- df %>% filter(is.finite(x), is.finite(y))
+  n  <- nrow(df)
+  if (n < 6 || sd(df$x) == 0) {
+    return(tibble(n = n, cv_spearman = NA_real_, cv_rmse = NA_real_))
+  }
+  preds <- map_dbl(seq_len(n), function(i) {
+    fit <- lm(y ~ x, data = df[-i, ])                   # train on n-1
+    predict(fit, newdata = df[i, , drop = FALSE])        # predict held-out
+  })
+  cv_sp <- suppressWarnings(cor(preds, df$y, method = "spearman"))
+  tibble(n           = n,
+         cv_spearman = cv_sp,
+         cv_rmse     = sqrt(mean((preds - df$y)^2)))
+}
+```
+
+```{r loio-candidates}
+# Top 3 features per ploidy x value_metric x perf_metric as CV candidates
+candidates <- correlations %>%
+  filter(is.finite(spearman_rho)) %>%
+  group_by(ploidy, value_metric, perf_metric) %>%
+  slice_max(abs(spearman_rho), n = 3, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(ploidy, value_metric, feature, perf_metric, spearman_rho, p_adj_bh)
+
+# Run LOIO-CV for every candidate
+loio_results <- joined_long %>%
+  inner_join(candidates,
+             by = c("ploidy", "value_metric", "feature", "perf_metric")) %>%
+  filter(is.finite(feature_value), is.finite(perf_value)) %>%
+  rename(x = feature_value, y = perf_value) %>%
+  group_by(ploidy, value_metric, feature, perf_metric, spearman_rho, p_adj_bh) %>%
+  group_modify(~ loio_cv(.x)) %>%
+  ungroup() %>%
+  arrange(ploidy, value_metric, perf_metric, desc(abs(cv_spearman)))
+
+write_csv(loio_results, file.path(out_dir, "loio_cv_performance.csv"))
+
+cat("LOIO-CV results\n")
+loio_results %>%
+  select(ploidy, value_metric, feature, perf_metric,
+         n, spearman_rho, cv_spearman, cv_rmse) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  print(n = 60)
+```
+
+```{r loio-plot, fig.width=14, fig.height=10}
+p_loio <- loio_results %>%
+  filter(is.finite(cv_spearman)) %>%
+  mutate(
+    feature = reorder(feature, abs(cv_spearman)),
+    sig     = p_adj_bh < 0.05
+  ) %>%
+  ggplot(aes(x = cv_spearman, y = feature, fill = sig)) +
+  geom_col(width = 0.7) +
+  geom_vline(xintercept = 0, linewidth = 0.3) +
+  facet_grid(perf_metric ~ ploidy + value_metric, scales = "free_y") +
+  scale_fill_manual(
+    values = c("FALSE" = "grey70", "TRUE" = "#0072B2"),
+    name   = "Correlation BH-adj p < 0.05"
+  ) +
+  labs(
+    x     = "CV Spearman rho (LOIO)",
+    y     = "Resazurin feature",
+    title = "Leave-one-individual-out CV: predictive performance by ploidy"
+  ) +
+  theme_classic(base_size = 9) +
+  theme(strip.text = element_text(size = 7))
+
+p_loio
+ggsave(file.path(fig_dir, "loio_cv_performance.png"),
+       p_loio, width = 14, height = 10)
+```
+
 # Correlation Heatmap
 
 Heatmap of Spearman ρ for every resazurin feature × performance metric pair,
