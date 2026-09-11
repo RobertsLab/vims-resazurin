@@ -155,6 +155,182 @@ joined<-joined%>%mutate(shell_width=as.numeric(shell_width))
 write_csv(joined, file.path(out_dir, "joined_resazurin_performance.csv"))
 ```
 
+# Diagnose the Join
+
+Check how many individuals matched between datasets and whether the join key
+format is consistent.
+
+```{r check-join}
+resaz_ids  <- resazurin %>% distinct(trace_id) %>% pull(trace_id)
+perf_ids   <- performance_clean %>% distinct(trace_id) %>% pull(trace_id)
+
+cat("Resazurin unique trace_ids:      ", length(resaz_ids), "\n")
+cat("Performance unique trace_ids:    ", length(perf_ids),  "\n")
+cat("Matched (inner join) rows:       ", nrow(joined),       "\n")
+cat("Matched unique individuals:      ", n_distinct(joined$trace_id), "\n")
+cat("Match rate (of resazurin IDs):   ",
+    round(n_distinct(joined$trace_id) / length(resaz_ids), 2), "\n\n")
+
+cat("Example resazurin trace_ids:\n")
+print(head(resaz_ids, 6))
+
+cat("\nExample performance trace_ids:\n")
+print(head(perf_ids, 6))
+
+unmatched_resaz <- setdiff(resaz_ids, perf_ids)
+unmatched_perf  <- setdiff(perf_ids,  resaz_ids)
+cat("\nResazurin IDs absent from performance:", length(unmatched_resaz), "\n")
+if (length(unmatched_resaz) > 0) print(head(unmatched_resaz, 10))
+
+cat("\nPerformance IDs absent from resazurin:", length(unmatched_perf), "\n")
+if (length(unmatched_perf) > 0) print(head(unmatched_perf, 10))
+```
+
+# Reduce Correlated Curve Features
+
+Features that are nearly perfectly collinear carry redundant information and
+inflate the multiple-testing burden. A Spearman correlation matrix is
+computed across features; hierarchical clustering on 1 − |ρ| groups
+redundant features, and the highest-variance representative is kept from each
+cluster (cutoff |ρ| > 0.75).
+
+```{r feature-reduction, fig.width=12, fig.height=10}
+# Drop features with near-zero variance or too many NAs before correlating
+feat_data <- joined %>%
+  select(all_of(feature_cols)) %>%
+  select(where(~ var(.x, na.rm = TRUE) > 1e-10 && mean(is.finite(.x)) >= 0.5))
+
+# Update feature_cols to only non-degenerate features
+feature_cols <- names(feat_data)
+
+# --- correlation matrix ---
+feat_mat <- cor(feat_data, use = "pairwise.complete.obs", method = "spearman")
+
+# Replace any remaining NAs in the correlation matrix with 0 (no correlation)
+feat_mat[is.na(feat_mat)] <- 0
+diag(feat_mat) <- 1
+
+# heatmap of feature autocorrelations
+feat_cor_df <- feat_mat %>%
+  as.data.frame() %>%
+  rownames_to_column("f1") %>%
+  pivot_longer(-f1, names_to = "f2", values_to = "r")
+
+p_feat_cor <- ggplot(feat_cor_df, aes(x = f1, y = f2, fill = r)) +
+  geom_tile(colour = "white", linewidth = 0.2) +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+                       midpoint = 0, limits = c(-1, 1), name = "Spearman\nrho") +
+  labs(title = "Curve feature autocorrelations",
+       x = NULL, y = NULL) +
+  theme_classic(base_size = 8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+        axis.text.y = element_text(size = 7))
+
+p_feat_cor
+ggsave(file.path(fig_dir, "feature_autocorrelation.png"),
+       p_feat_cor, width = 12, height = 10)
+
+# --- hierarchical clustering to find redundant features ---
+dist_feat <- as.dist(1 - abs(feat_mat))
+hc_feat   <- hclust(dist_feat, method = "average")
+clusters_feat <- cutree(hc_feat, h = 0.25)   # h = 1 - 0.75
+
+feat_vars <- joined %>%
+  select(all_of(feature_cols)) %>%
+  summarise(across(everything(), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "feature", values_to = "variance")
+
+selected_features <- tibble(feature  = names(clusters_feat),
+                             cluster  = clusters_feat) %>%
+  left_join(feat_vars, by = "feature") %>%
+  group_by(cluster) %>%
+  slice_max(variance, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  pull(feature)
+
+cat("Original features:  ", length(feature_cols),      "\n")
+cat("After reduction:    ", length(selected_features),  "\n")
+cat("Retained features:\n")
+print(sort(selected_features))
+
+# overwrite feature_cols so all downstream chunks use the reduced set
+feature_cols <- selected_features
+```
+
+# Reduce Correlated Performance Metrics
+
+The same procedure applied to the field performance metrics. Shell dimensions,
+weights, and condition index are often strongly co-correlated within a size
+cohort; retaining one representative per cluster avoids testing the same
+biological signal multiple times.
+
+```{r perf-reduction, fig.width=8, fig.height=7}
+# --- correlation matrix ---
+perf_data <- joined %>%
+  select(all_of(perf_metrics)) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  select(where(~ var(.x, na.rm = TRUE) > 1e-10 && mean(is.finite(.x)) >= 0.5))
+
+perf_metrics <- names(perf_data)
+
+perf_mat <- cor(perf_data, use = "pairwise.complete.obs", method = "spearman")
+perf_mat[is.na(perf_mat)] <- 0
+diag(perf_mat) <- 1
+
+perf_cor_df <- perf_mat %>%
+  as.data.frame() %>%
+  rownames_to_column("m1") %>%
+  pivot_longer(-m1, names_to = "m2", values_to = "r")
+
+p_perf_cor <- ggplot(perf_cor_df, aes(x = m1, y = m2, fill = r)) +
+  geom_tile(colour = "white", linewidth = 0.3) +
+  geom_text(aes(label = round(r, 2)), size = 2.5, colour = "grey20") +
+  scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+                       midpoint = 0, limits = c(-1, 1), name = "Spearman\nrho") +
+  labs(title = "Performance metric autocorrelations",
+       x = NULL, y = NULL) +
+  theme_classic(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_perf_cor
+ggsave(file.path(fig_dir, "perf_metric_autocorrelation.png"),
+       p_perf_cor, width = 8, height = 7)
+
+# --- hierarchical clustering ---
+dist_perf    <- as.dist(1 - abs(perf_mat))
+hc_perf      <- hclust(dist_perf, method = "average")
+clusters_perf <- cutree(hc_perf, h = 0.25)
+
+perf_vars <- joined %>%
+  select(all_of(perf_metrics)) %>%
+  mutate(across(everything(), as.numeric)) %>%
+  summarise(across(everything(), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "metric", values_to = "variance")
+
+selected_perf_metrics <- tibble(metric   = names(clusters_perf),
+                                 cluster  = clusters_perf) %>%
+  left_join(perf_vars, by = "metric") %>%
+  group_by(cluster) %>%
+  slice_max(variance, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  pull(metric)
+
+cat("Original performance metrics: ", length(perf_metrics),         "\n")
+cat("After reduction:              ", length(selected_perf_metrics), "\n")
+cat("Retained metrics:\n")
+print(sort(selected_perf_metrics))
+
+# show which cluster each original metric fell into
+tibble(metric  = names(clusters_perf),
+       cluster = clusters_perf,
+       kept    = metric %in% selected_perf_metrics) %>%
+  arrange(cluster, metric) %>%
+  print()
+
+# overwrite perf_metrics so all downstream chunks use the reduced set
+perf_metrics <- selected_perf_metrics
+```
+
 # Correlate Resazurin Features with Field Performance
 
 Spearman ρ (rank-based) is the primary statistic; Pearson *r* is reported
