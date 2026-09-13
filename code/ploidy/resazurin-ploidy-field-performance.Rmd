@@ -21,7 +21,7 @@ editor_options:
 
 Two independent datasets describe the same set of diploid and triploid oysters:
 
-1. **Survival phenotypes** — `data/ploidy/field/ploidy_field_performance.xlsx` records each
+1. **Field phenotypes** — `data/ploidy/field/ploidy_field_performance.xlsx` records each
    ploidy's observed performance. 
    
 - Definitions: 
@@ -96,7 +96,7 @@ stopifnot(file.exists(resazurin_features_path), file.exists(phenotype_path))
 # Load the survival phenotype
 
 ```{r load-phenotype}
-phenotype <- read_excel(phenotype_path)%>%filter(!is.na(shell_height))%>%filter(live_dead_sampling=="L")
+phenotype <- read_excel(phenotype_path)#%>%filter(!is.na(shell_height))#%>%filter(live_dead_sampling=="L")
 
 cat("Samples with phenotype data:", nrow(phenotype), "\n")
 phenotype
@@ -120,7 +120,7 @@ level.
 # Performance metrics to correlate
 perf_metrics <- c("shell_height", "shell_length", "shell_width",
                   "cup", "fan", "whole_wet_weight",
-                  "dry_tissue_weight", "condition_index")
+                  "dry_tissue_weight", "condition_index", "live_dead_sampling")
 
 # Resazurin curve feature columns (numeric, excluding bookkeeping)
 feature_cols <- resazurin %>%
