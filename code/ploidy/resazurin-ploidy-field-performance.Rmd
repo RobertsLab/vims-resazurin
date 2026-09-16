@@ -35,6 +35,7 @@ Two independent datasets describe the same set of diploid and triploid oysters:
     - DSW is dry shell weight
     - DTW is dry tissue weight
     - CI is condition index and we use 100 x DTW/(WWW-DSW)
+    - Live dead is survival 
 
 2. **Metabolic curve features** — `output/ploidy/resazurin-curves/curve_features.csv`
    contains ~25 curve shape/capacity/rate traits per individual extracted from
@@ -100,6 +101,15 @@ phenotype <- read_excel(phenotype_path)#%>%filter(!is.na(shell_height))#%>%filte
 
 cat("Samples with phenotype data:", nrow(phenotype), "\n")
 phenotype
+```
+
+View distributions. 
+```{r}
+names(phenotype)
+hist(phenotype$condition_index)
+hist(phenotype$live_dead_sampling)
+hist(phenotype$dry_tissue_weight)
+hist(phenotype$cup)
 ```
 
 # Load resazurin curve features
