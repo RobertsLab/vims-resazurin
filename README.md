@@ -15,8 +15,11 @@ This research evaluates resazurin-based metabolic assays as biomarkers for oyste
 
 ### Analysis Scripts (`/code/`)
 - `resazurin-trials.Rmd` - Main analysis of metabolic biomarkers and trait correlations
-- `ploidy-trials-20250826.Rmd` - Ploidy comparison studies (triploid vs diploid)
-- `ploidy-trials-20250813.Rmd` - Earlier ploidy trials
+- `ploidy/ploidy-trials-20250826.Rmd` - Ploidy comparison studies (triploid vs diploid)
+- `ploidy/ploidy-trials-20250813.Rmd` - Earlier ploidy trials
+- `ploidy/resazurin-curve-features-ploidy.Rmd` - Per-individual curve-shape features for the ploidy trial
+- `ploidy/resazurin-ploidy-field-performance.Rmd` - Curve features vs field performance (single normalized scale)
+- `ploidy/resazurin-ploidy-index-catalogue-field-prediction.Rmd` - Fresh end-to-end analysis from raw plate files: every value scale x curve feature x size/plate adjustment, screened against field survival, growth, condition and yield with permutation-calibrated family-wise error, nested cross-validated composites, assay-duration and normalization comparisons. Outputs in `output/ploidy/resazurin-index-catalogue/`
 - `temperature-testing.Rmd` - Temperature stress testing analysis
 - `temperature.Rmd` - Environmental temperature monitoring
 - `plate-maps.Rmd` - Experimental design documentation
