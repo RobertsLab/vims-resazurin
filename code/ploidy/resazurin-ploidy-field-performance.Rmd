@@ -101,6 +101,7 @@ phenotype <- read_excel(phenotype_path)#%>%filter(!is.na(shell_height))#%>%filte
 
 cat("Samples with phenotype data:", nrow(phenotype), "\n")
 phenotype
+names(phenotype)
 ```
 
 View distributions. 
